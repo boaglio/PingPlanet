@@ -39,6 +39,9 @@ public final class PingPlanet {
                   --servers FILE         use your own server list (CSV, same format as "list --csv")
                   --csv                  with "list": print the server list as CSV
                   --json                 print results as JSON
+                  --markdown [FILE.md]   also save the results as a Markdown report
+                                         (default: pingplanet-<date>-<time>.md here;
+                                         a folder puts it there)
                   --no-color             no colors (also when NO_COLOR is set)
               -h, --help                 show this help
               -v, --version              show the version
@@ -111,11 +114,15 @@ public final class PingPlanet {
         List<Server> servers = Server.filter(servers(o), o.countries);
         if (servers.isEmpty()) throw new UsageException("no servers match --countries " + String.join(",", o.countries));
         // With --json the results go to stdout and the human-readable view to stderr.
-        View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
-        List<Report.Run> runs = Engine.world(
-                new Engine.WorldPlan(servers, sources(o), !o.latencyOnly, o.seconds, o.streams), view);
+        RecordingView view = new RecordingView(o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor)));
+        Engine.WorldPlan plan = new Engine.WorldPlan(servers, sources(o), !o.latencyOnly, o.seconds, o.streams);
+        List<Report.Run> runs = Engine.world(plan, view);
         if (o.json && runs.size() > 1) Report.runsJson(out, runs);
         else if (o.json) Report.json(out, runs.getFirst().results());
+        if (o.markdown != null) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            saved(o, out, err, Markdown.write(Markdown.target(o.markdown, now), Markdown.world(plan, runs, view.warnings(), now)));
+        }
         return runs.stream().anyMatch(r -> r.reached() > 0) ? 0 : 1;
     }
 
@@ -148,11 +155,21 @@ public final class PingPlanet {
             port = parsePort(host.substring(colon + 1));
             host = host.substring(0, colon);
         }
-        View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
-        List<Report.LanRun> runs = Engine.lan(new Engine.LanPlan(host, port, sources(o), o.seconds, o.streams), view);
+        RecordingView view = new RecordingView(o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor)));
+        Engine.LanPlan plan = new Engine.LanPlan(host, port, sources(o), o.seconds, o.streams);
+        List<Report.LanRun> runs = Engine.lan(plan, view);
         if (o.json && runs.size() > 1) Report.lanRunsJson(out, runs);
         else if (o.json && runs.getFirst().result() != null) Report.lanJson(out, runs.getFirst().result());
+        if (o.markdown != null) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            saved(o, out, err, Markdown.write(Markdown.target(o.markdown, now), Markdown.lan(plan, runs, view.warnings(), now)));
+        }
         return runs.stream().anyMatch(r -> r.result() != null) ? 0 : 1;
+    }
+
+    /** One line saying where the report went (on stderr with --json, so stdout stays pure JSON). */
+    private static void saved(Options o, PrintStream out, PrintStream err, java.nio.file.Path file) {
+        (o.json ? err : out).println("  Report saved to " + file.toAbsolutePath().normalize());
     }
 
     private static int serve(Options o, PrintStream out) throws IOException {
@@ -228,6 +245,8 @@ public final class PingPlanet {
         Path serversFile;
         boolean csv;
         List<String> interfaces = List.of();
+        /** null: no report; "": the default file name; otherwise a file or folder. */
+        String markdown;
         boolean json;
         boolean noColor;
         boolean help;
@@ -251,6 +270,16 @@ public final class PingPlanet {
                     case "--json" -> o.json = true;
                     case "--csv" -> o.csv = true;
                     case "--no-color" -> o.noColor = true;
+                    case "--markdown", "--md" -> {
+                        if (value != null) {
+                            o.markdown = value;
+                        } else if (i + 1 < args.length && (args[i + 1].toLowerCase(Locale.ROOT).endsWith(".md")
+                                || Files.isDirectory(Path.of(args[i + 1])))) {
+                            o.markdown = args[++i]; // only a .md name or a folder, so "--markdown -c BR" still works
+                        } else {
+                            o.markdown = "";
+                        }
+                    }
                     case "-c", "--countries" -> o.countries = countries(value != null ? value : next(args, ++i, arg));
                     case "-s", "--seconds" -> o.seconds = range(parseInt(value != null ? value : next(args, ++i, arg), "seconds"), 1, 60, "seconds");
                     case "-n", "--streams" -> o.streams = range(parseInt(value != null ? value : next(args, ++i, arg), "streams"), 1, 32, "streams");

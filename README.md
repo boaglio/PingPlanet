@@ -39,6 +39,8 @@ every server colored by latency, and a download ranking:
 - **Honest latency**: like browser speed tests, it times tiny HTTP requests on an already open connection. Connection setup is never timed, so busy servers that are slow to accept new connections do not inflate the result, and no root access is needed (unlike ICMP ping).
 - **Accurate on fast links**: transfers use several parallel connections (`--streams`), and timing starts at the first byte, so connection setup is not counted.
 - **Wired vs Wi-Fi, automatically**: every connection to the internet (cable, Wi-Fi, USB modem…) is found and tested, one after the other, with a side-by-side comparison at the end. `-i` picks specific ones.
+- **Markdown reports** (`--markdown`): summary, connection comparison, full results with 🟢🟡🟠🔴
+  latency markers, a download ranking and any warnings, ready to paste into a README or an issue.
 - **JSON output** (`--json`) for scripts, cron jobs and dashboards.
 - **Your own servers**: export the list with `pingplanet list --csv`, edit it, and pass it back with `--servers`.
 - **Looks good in a terminal**: colors, live gauges, rounded tables and a world map. When the output goes to a file or a pipe you get plain text instead, and `NO_COLOR` or `--no-color` turns the colors off.
@@ -86,6 +88,9 @@ pingplanet interfaces            show this machine's network connections
     --servers FILE         use your own server list (CSV, same format as "list --csv")
     --csv                  with "list": print the server list as CSV
     --json                 print results as JSON
+    --markdown [FILE.md]   also save the results as a Markdown report
+                           (default: pingplanet-<date>-<time>.md here;
+                           a folder puts it there)
     --no-color             no colors (also when NO_COLOR is set)
 ```
 
@@ -95,6 +100,8 @@ pingplanet interfaces            show this machine's network connections
 pingplanet --latency-only            # quick check of every country, a few seconds
 pingplanet -c BR,PT,US -s 10         # three countries, 10 seconds each
 pingplanet --json > results.json     # machine-readable results
+pingplanet world --markdown          # also save pingplanet-<date>-<time>.md in this folder
+pingplanet lan 192.168.0.10 --markdown lan.md
 ```
 
 ### Local network test
