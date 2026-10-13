@@ -33,7 +33,17 @@ record Server(String code, String country, String city, String provider, double 
         return city.isEmpty() ? country : city + ", " + country;
     }
 
-    boolean located() {
+    /**
+     * Where latency is measured. Endpoints that generate data on the fly, like
+     * Cloudflare's {@code __down?bytes=N}, are asked for zero bytes instead.
+     */
+    URI pingUrl() {
+        String query = url.getRawQuery();
+        if (query == null || !query.matches("(.*&)?bytes=\\d+(&.*)?")) return url;
+        return URI.create(url.toString().replaceFirst("([?&])bytes=\\d+", "$1bytes=0"));
+    }
+
+        boolean located() {
         return !Double.isNaN(lat) && !Double.isNaN(lon);
     }
 

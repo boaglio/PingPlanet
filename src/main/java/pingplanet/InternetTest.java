@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.LongAdder;
 final class InternetTest {
 
     static final Duration TIMEOUT = Duration.ofSeconds(10);
+    /** Busy speed-test servers can take a while to answer; streams keep retrying until this passes. */
+    static final Duration FIRST_BYTE_WAIT = Duration.ofSeconds(20);
 
     private InternetTest() {
     }
@@ -31,7 +33,7 @@ final class InternetTest {
     static Latency latency(Server server, int samples) {
         List<Double> times = new ArrayList<>();
         int lost = 0;
-        try (HttpPing ping = new HttpPing(server.url(), (int) TIMEOUT.toMillis())) {
+        try (HttpPing ping = new HttpPing(server.pingUrl(), (int) TIMEOUT.toMillis())) {
             try {
                 ping.ping();
             } catch (IOException e) {
@@ -55,12 +57,19 @@ final class InternetTest {
      * {@code duration}, counted from the first byte so connection setup is not
      * measured. A stream that reaches the end of the file starts it again.
      * Several streams are needed to fill a fast link to a distant server.
+     * A stream whose connection fails or times out tries again, because busy
+     * servers often drop some connections; HTTP errors end the stream.
      */
     static Throughput download(Server server, int streams, Duration duration) throws IOException {
         return download(server, streams, duration, Progress.NONE);
     }
 
     static Throughput download(Server server, int streams, Duration duration, Progress progress) throws IOException {
+        return download(server, streams, duration, progress, FIRST_BYTE_WAIT);
+    }
+
+    static Throughput download(Server server, int streams, Duration duration, Progress progress, Duration firstByteWait)
+            throws IOException {
         // HTTP/1.1 so each stream gets its own TCP connection (HTTP/2 would multiplex them on one).
         HttpClient client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -84,9 +93,9 @@ final class InternetTest {
         for (int i = 0; i < streams; i++) {
             threads.add(Thread.ofVirtual().name("download-" + i).start(() -> {
                 try {
-                    pump(client, request, bytes, firstByte, open, stop);
+                    pump(client, request, bytes, firstByte, open, stop, failure);
                 } catch (Exception e) {
-                    if (!stop.stopped) failure.compareAndSet(null, e);
+                    if (!stop.stopped) failure.set(e);
                 } finally {
                     running.decrementAndGet();
                 }
@@ -94,7 +103,7 @@ final class InternetTest {
         }
 
         try {
-            long waitUntil = System.nanoTime() + TIMEOUT.toNanos();
+            long waitUntil = System.nanoTime() + firstByteWait.toNanos();
             long lastUpdate = 0;
             while (firstByte.get() == 0 && running.get() > 0 && System.nanoTime() < waitUntil) {
                 if (System.nanoTime() - lastUpdate > Progress.INTERVAL_NANOS) {
@@ -106,7 +115,8 @@ final class InternetTest {
             long start = firstByte.get();
             if (start == 0) {
                 Exception e = failure.get();
-                throw e != null ? asIOException(e) : new IOException("no data from " + server.host() + " in " + TIMEOUT.toSeconds() + " s");
+                throw e != null ? asIOException(e)
+                        : new IOException("no data from " + server.host() + " in " + firstByteWait.toSeconds() + " s");
             }
             long end = start + duration.toNanos();
             while (System.nanoTime() < end && running.get() > 0) {
@@ -143,10 +153,19 @@ final class InternetTest {
     }
 
     private static void pump(HttpClient client, HttpRequest request, LongAdder bytes, AtomicLong firstByte,
-                             Set<InputStream> open, Stopper stop) throws IOException, InterruptedException {
+                             Set<InputStream> open, Stopper stop, AtomicReference<Exception> failure)
+            throws IOException, InterruptedException {
         byte[] buffer = new byte[64 * 1024];
         while (!stop.stopped) {
-            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response;
+            try {
+                response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            } catch (IOException e) {
+                if (stop.stopped) return;
+                failure.set(e); // remembered in case no stream ever gets data
+                pause(500);
+                continue;
+            }
             try (InputStream in = response.body()) {
                 if (response.statusCode() >= 400) {
                     throw new IOException("HTTP " + response.statusCode() + " from " + request.uri().getHost());
@@ -156,6 +175,9 @@ final class InternetTest {
                     firstByte.compareAndSet(0, System.nanoTime());
                     bytes.add(n);
                 }
+            } catch (IOException e) {
+                if (stop.stopped || response.statusCode() >= 400) throw e;
+                failure.set(e); // the connection broke mid-transfer: start a new one
             } finally {
                 open.remove(response.body());
             }

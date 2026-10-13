@@ -39,6 +39,20 @@ class InternetTestTest {
                 // client stopped reading
             }
         });
+        AtomicInteger dropped = new AtomicInteger();
+        http.createContext("/flaky.bin", exchange -> {
+            if (dropped.incrementAndGet() <= 2) { // like a busy server: hang up without answering
+                exchange.close();
+                return;
+            }
+            exchange.sendResponseHeaders(200, FILE_SIZE);
+            try (OutputStream out = exchange.getResponseBody()) {
+                byte[] chunk = new byte[64 * 1024];
+                for (int sent = 0; sent < FILE_SIZE; sent += chunk.length) out.write(chunk);
+            } catch (IOException ignored) {
+                // client stopped reading
+            }
+        });
         http.createContext("/missing", exchange -> {
             exchange.sendResponseHeaders(404, -1);
             exchange.close();
@@ -70,6 +84,12 @@ class InternetTestTest {
     }
 
     @Test
+    void streamsRetryWhenTheServerDropsConnections() throws IOException {
+        Throughput t = InternetTest.download(server("/flaky.bin"), 1, Duration.ofSeconds(1));
+        assertTrue(t.bytes() > 0);
+    }
+
+    @Test
     void httpErrorsAreReported() {
         IOException e = assertThrows(IOException.class,
                 () -> InternetTest.download(server("/missing"), 2, Duration.ofSeconds(1)));
@@ -85,7 +105,10 @@ class InternetTestTest {
         Server dead = new Server("XX", "Nowhere", "Nowhere", "Test", Double.NaN, Double.NaN, URI.create("http://127.0.0.1:" + closedPort + "/f"));
         Latency l = InternetTest.latency(dead, 2);
         assertEquals(2, l.lost());
-        assertThrows(IOException.class, () -> InternetTest.download(dead, 1, Duration.ofSeconds(1)));
+        long start = System.nanoTime();
+        assertThrows(IOException.class,
+                () -> InternetTest.download(dead, 2, Duration.ofSeconds(1), Progress.NONE, Duration.ofSeconds(1)));
+        assertTrue(System.nanoTime() - start < 5_000_000_000L, "gives up after the first-byte wait");
     }
 
     private Server server(String path) {

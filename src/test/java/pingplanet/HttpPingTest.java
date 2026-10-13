@@ -54,8 +54,40 @@ class HttpPingTest {
         assertTrue(l.medianMs() < 100, "median " + l.medianMs());
     }
 
+    @Test
+    void subtractsServerProcessingTime() throws IOException {
+        // The server says it spent 300 ms; the network part is what is left.
+        URI url = start("HTTP/1.1 200 OK\r\nServer-Timing: edge;dur=100, worker;dur=200\r\nContent-Length: 0\r\n\r\n", 0, 300);
+        try (HttpPing ping = new HttpPing(url, 2_000)) {
+            ping.ping();
+            double ms = ping.ping();
+            assertTrue(ms < 100, "ping " + ms);
+        }
+    }
+
+    @Test
+    void parsesServerTiming() {
+        assertEquals(23, HttpPing.serverTiming("cfspeededge;dur=3, cfspeedworker;dur=20"));
+        assertEquals(0, HttpPing.serverTiming("cfl4;desc=\"?proto=tcp&rtt=3743\""));
+        assertEquals(1.5, HttpPing.serverTiming("db;dur=\"1.5\""));
+    }
+
+    @Test
+    void cloudflareIsPingedForZeroBytes() {
+        Server cf = new Server("ANY", "Nearest edge", "", "Cloudflare", Double.NaN, Double.NaN,
+                URI.create("https://speed.cloudflare.com/__down?bytes=25000000"));
+        assertEquals("https://speed.cloudflare.com/__down?bytes=0", cf.pingUrl().toString());
+        Server plain = new Server("BR", "Brazil", "São Paulo", "Vultr", 0, 0, URI.create("https://a.example/100MB.bin"));
+        assertEquals(plain.url(), plain.pingUrl());
+    }
+
     /** Answers every request with {@code response}; the first answer per connection waits {@code firstDelayMs}. */
     private URI start(String response, long firstDelayMs) throws IOException {
+        return start(response, firstDelayMs, 0);
+    }
+
+    /** Like {@link #start(String, long)}, and every answer waits {@code delayMs}. */
+    private URI start(String response, long firstDelayMs, long delayMs) throws IOException {
         server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         byte[] bytes = response.getBytes(StandardCharsets.US_ASCII);
         Thread.ofVirtual().start(() -> {
@@ -67,13 +99,13 @@ class HttpPingTest {
                     return;
                 }
                 connections.incrementAndGet();
-                Thread.ofVirtual().start(() -> serve(socket, bytes, firstDelayMs));
+                Thread.ofVirtual().start(() -> serve(socket, bytes, firstDelayMs, delayMs));
             }
         });
         return URI.create("http://127.0.0.1:" + server.getLocalPort() + "/file.bin");
     }
 
-    private static void serve(Socket socket, byte[] response, long firstDelayMs) {
+    private static void serve(Socket socket, byte[] response, long firstDelayMs, long delayMs) {
         try (socket) {
             InputStream in = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
@@ -81,6 +113,7 @@ class HttpPingTest {
             while (readRequest(in)) {
                 if (first && firstDelayMs > 0) InternetTest.pause(firstDelayMs);
                 first = false;
+                if (delayMs > 0) InternetTest.pause(delayMs);
                 out.write(response);
                 out.flush();
             }

@@ -9,6 +9,8 @@ import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
@@ -18,6 +20,9 @@ import javax.net.ssl.SSLSocketFactory;
  * Latency the way browser speed tests measure it: the time from sending a tiny
  * HTTP request on an already open connection to the first byte of the answer.
  *
+ * <p>When the server reports its own processing time in a {@code Server-Timing}
+ * header (Cloudflare does), that time is taken out, as browser tests do.
+ *
  * <p>Connecting (TCP and TLS) is never timed. Busy speed-test servers often drop
  * new connections and the client retries after 1, 2, 4 seconds, which would show
  * up as seconds of "latency" that has nothing to do with the network.
@@ -26,6 +31,7 @@ final class HttpPing implements AutoCloseable {
 
     /** Bodies up to this size are read so the connection can be reused. */
     private static final int MAX_DRAIN = 64 * 1024;
+    private static final Pattern DUR = Pattern.compile("(?:^|;)\\s*dur=\"?([0-9.]+)");
 
     private final URI url;
     private final int timeoutMs;
@@ -58,8 +64,9 @@ final class HttpPing implements AutoCloseable {
             close();
             throw new IOException("connection closed by " + url.getHost());
         }
-        finishResponse(first, in);
-        return elapsed / 1e6;
+        double elapsedMs = elapsed / 1e6;
+        double serverMs = finishResponse(first, in);
+        return serverMs > 0 && serverMs < elapsedMs ? elapsedMs - serverMs : elapsedMs;
     }
 
     private void open() throws IOException {
@@ -87,8 +94,11 @@ final class HttpPing implements AutoCloseable {
         }
     }
 
-    /** Reads the rest of the headers and a small body, or closes the connection if the body is big. */
-    private void finishResponse(int first, InputStream in) throws IOException {
+    /**
+     * Reads the rest of the headers and a small body, or closes the connection if
+     * the body is big. Returns the server's processing time in ms (0 if unknown).
+     */
+    private double finishResponse(int first, InputStream in) throws IOException {
         ByteArrayOutputStream head = new ByteArrayOutputStream();
         head.write(first);
         int matched = 0; // progress through "\r\n\r\n"
@@ -98,17 +108,18 @@ final class HttpPing implements AutoCloseable {
             int b = in.read();
             if (b == -1) {
                 close();
-                return;
+                return 0;
             }
             head.write(b);
             matched = b == end[matched] ? matched + 1 : (b == '\r' ? 1 : 0);
             if (head.size() > 32 * 1024) { // not HTTP as we know it
                 close();
-                return;
+                return 0;
             }
         }
         long length = -1;
         boolean keepAlive = true;
+        double serverMs = 0;
         for (String line : head.toString(StandardCharsets.ISO_8859_1).split("\r\n")) {
             String lower = line.toLowerCase(Locale.ROOT);
             if (lower.startsWith("content-length:")) {
@@ -117,13 +128,15 @@ final class HttpPing implements AutoCloseable {
                 } catch (NumberFormatException e) {
                     length = -1;
                 }
+            } else if (lower.startsWith("server-timing:")) {
+                serverMs += serverTiming(lower.substring(14));
             } else if (lower.startsWith("transfer-encoding:") || (lower.startsWith("connection:") && lower.contains("close"))) {
                 keepAlive = false; // chunked bodies and closing servers: just reconnect next time
             }
         }
         if (!keepAlive || length < 0 || length > MAX_DRAIN) {
             close();
-            return;
+            return serverMs;
         }
         long left = length;
         byte[] buf = new byte[(int) Math.min(Math.max(length, 1), 8192)];
@@ -131,10 +144,25 @@ final class HttpPing implements AutoCloseable {
             int n = in.read(buf, 0, (int) Math.min(buf.length, left));
             if (n == -1) {
                 close();
-                return;
+                return serverMs;
             }
             left -= n;
         }
+        return serverMs;
+    }
+
+    /** Sums the {@code dur} values of a Server-Timing header, e.g. "edge;dur=3, worker;dur=20" is 23. */
+    static double serverTiming(String value) {
+        double total = 0;
+        Matcher m = DUR.matcher(value);
+        while (m.find()) {
+            try {
+                total += Double.parseDouble(m.group(1));
+            } catch (NumberFormatException ignored) {
+                // skip a malformed entry
+            }
+        }
+        return total;
     }
 
     @Override
