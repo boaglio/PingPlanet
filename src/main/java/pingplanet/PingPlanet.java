@@ -101,7 +101,11 @@ public final class PingPlanet {
         for (Net.Source source : sources) {
             runs.add(new Report.Run(source, worldRun(o, servers, source, view)));
         }
-        if (runs.size() > 1) view.compare(runs);
+        if (runs.size() > 1) {
+            view.compare(runs);
+            defaultName(Net.INTERNET).flatMap(name -> Advice.world(runs, name))
+                    .ifPresent(advice -> view.warning(advice.message(), advice.howTo()));
+        }
 
         if (o.json && runs.size() > 1) Report.runsJson(out, runs);
         else if (o.json) Report.json(out, runs.getFirst().results());
@@ -175,6 +179,14 @@ public final class PingPlanet {
         return sources;
     }
 
+    /** Name of the interface the system picks for {@code target}, falling back to Linux's default route. */
+    private static java.util.Optional<String> defaultName(InetAddress target) {
+        java.util.Optional<String> name = Net.defaultSource(target).map(Net.Source::name);
+        if (name.isPresent()) return name;
+        List<Net.Route> routes = Net.defaultRoutes();
+        return routes.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(routes.getFirst().iface());
+    }
+
     private static void warnAboutRouting(Net.Source source, View view) {
         Net.linuxRouteFix(source).ifPresent(commands -> view.warning(
                 "Linux routes by destination, so this test may still leave through the default interface instead of "
@@ -208,6 +220,13 @@ public final class PingPlanet {
             }
         }
         view.lanCompare(runs);
+        try {
+            InetAddress target = InetAddress.getByName(host);
+            defaultName(target).flatMap(name -> Advice.lan(runs, name))
+                    .ifPresent(advice -> view.warning(advice.message(), advice.howTo()));
+        } catch (java.net.UnknownHostException e) {
+            // every run already failed on this; nothing to advise
+        }
         if (o.json) Report.lanRunsJson(out, runs);
         return runs.stream().anyMatch(r -> r.result() != null) ? 0 : 1;
     }

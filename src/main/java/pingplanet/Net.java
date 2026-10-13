@@ -1,6 +1,7 @@
 package pingplanet;
 
 import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -62,7 +63,41 @@ final class Net {
      * and overlay links such as Tailscale that do not lead to the internet.
      */
     static List<Source> internetSources() {
-        return internetSources(sources(), defaultRoutes());
+        List<Source> picked = internetSources(sources(), defaultRoutes());
+        // Without a routing table to read, ask the system which one it would use and put it first.
+        Optional<Source> preferred = defaultSource(INTERNET);
+        if (preferred.isPresent()) {
+            List<Source> ordered = new ArrayList<>(picked);
+            if (ordered.removeIf(s -> s.name().equals(preferred.get().name()))) ordered.addFirst(preferred.get());
+            return ordered;
+        }
+        return picked;
+    }
+
+    /** Any public address works: no packet is sent to it. */
+    static final InetAddress INTERNET = ipv4(1, 1, 1, 1);
+
+    private static InetAddress ipv4(int a, int b, int c, int d) {
+        try {
+            return InetAddress.getByAddress(new byte[] {(byte) a, (byte) b, (byte) c, (byte) d});
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e); // never: four bytes are always a valid IPv4 address
+        }
+    }
+
+    /**
+     * The connection the system uses for {@code target} unless told otherwise.
+     * "Connecting" a UDP socket sends nothing but makes the OS pick a route and a
+     * local address, which works the same on Linux, macOS and Windows.
+     */
+    static Optional<Source> defaultSource(InetAddress target) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.connect(target, 53);
+            InetAddress local = socket.getLocalAddress();
+            return sources().stream().filter(s -> s.address().equals(local)).findFirst();
+        } catch (IOException | RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     static List<Source> internetSources(List<Source> all, List<Route> defaults) {

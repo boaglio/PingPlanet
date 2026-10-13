@@ -125,6 +125,11 @@ pingplanet lan 192.168.0.10            # LAN test over every connection
 The comparison shows, per interface, how many servers answered, the latency to the nearest server
 (what the connection itself adds), the median latency and the median download speed.
 
+If the connection your system uses by default is clearly not the best one (another is at least 20% faster
+without answering more than 20 ms slower, or the default reached no servers), PingPlanet ends with a warning
+and the command to make the better one the default (`nmcli` or `ip route` on Linux, PowerShell on Windows,
+the service order on macOS).
+
 **Linux note:** Linux chooses the outgoing interface by destination, not by source address, so traffic
 for the non-default interface can still leave through the default one. PingPlanet detects this and
 prints the two commands that add a source route for that address, for example:
