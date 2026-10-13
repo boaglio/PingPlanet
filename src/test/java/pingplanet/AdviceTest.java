@@ -82,6 +82,18 @@ class AdviceTest {
         assertTrue(Advice.howTo("Mac OS X", WIFI, List.of(), false).getFirst().contains("drag Wi-Fi to the top"));
     }
 
+    @Test
+    void verdictCallsSmallGapsTheSame() {
+        // The reported bug: 1.0× is not "faster".
+        assertEquals("enp8s0 and wlo1 are about as fast (305.0 Mbps vs 301.0 Mbps)",
+                Advice.speedVerdict("enp8s0", 305, "wlo1", 301));
+        assertEquals("enp8s0 is 1.2× faster than wlo1", Advice.speedVerdict("enp8s0", 360, "wlo1", 300));
+        assertEquals("enp8s0 is much faster than wlo1", Advice.speedVerdict("enp8s0", 360, "wlo1", 0));
+        assertTrue(Advice.sameSpeeds(List.of(305.0, 301.0, Double.NaN)));
+        assertTrue(!Advice.sameSpeeds(List.of(360.0, 300.0)));
+        assertTrue(!Advice.sameSpeeds(List.of(300.0))); // nothing to compare
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     /** A run whose one server gave this download (NaN: none) and latency (NaN: unreachable). */

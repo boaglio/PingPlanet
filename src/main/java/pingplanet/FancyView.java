@@ -222,6 +222,19 @@ final class FancyView implements View {
     }
 
     @Override
+    public void connections(List<Net.Source> sources, String defaultName) {
+        banner();
+        out.println("  " + t.fg(SKY, "◉") + " " + t.bold(sources.size() + " connections") + t.dim(" will be tested, one after the other:"));
+        int nameWidth = sources.stream().mapToInt(s -> s.name().length()).max().orElse(0);
+        for (Net.Source s : sources) {
+            out.println("      " + t.bold(t.fg(CYAN, Term.padRight(s.name(), nameWidth))) + "  "
+                    + Term.padRight(s.address().getHostAddress(), 15) + "  " + t.dim(Term.cut(s.displayName(), 30))
+                    + (s.name().equals(defaultName) ? "  " + t.fg(GREEN, "● default") : ""));
+        }
+        out.println();
+    }
+
+    @Override
     public void lanError(String message) {
         endLive();
         List<String> lines = wrap(message, Math.max(40, Math.min(columns, 100) - 6));
@@ -262,9 +275,8 @@ final class FancyView implements View {
             Report.LanRun best = ok.stream().max(Comparator.comparingDouble(r -> r.result().download().mbps())).orElseThrow();
             Report.LanRun worst = ok.stream().min(Comparator.comparingDouble(r -> r.result().download().mbps())).orElseThrow();
             if (best != worst && worst.result().download().mbps() > 0) {
-                out.println("  " + t.fg(YELLOW, "★") + " " + t.bold(best.source().name()) + " is "
-                        + String.format(Locale.ROOT, "%.1f×", best.result().download().mbps() / worst.result().download().mbps())
-                        + " faster than " + t.bold(worst.source().name()) + " on this network");
+                out.println("  " + t.fg(YELLOW, "★") + " " + Advice.speedVerdict(best.source().name(), best.result().download().mbps(),
+                        worst.source().name(), worst.result().download().mbps()) + " on this network");
             }
         }
         out.println();
@@ -388,12 +400,16 @@ final class FancyView implements View {
         Report.Run best = measured.stream().max(Comparator.comparingDouble(Report.Run::medianDownload)).orElseThrow();
         Report.Run worst = measured.stream().min(Comparator.comparingDouble(Report.Run::medianDownload)).orElseThrow();
         if (best == worst || worst.medianDownload() <= 0) return null;
-        String text = t.bold(best.source().name()) + " is "
-                + String.format(Locale.ROOT, "%.1f×", best.medianDownload() / worst.medianDownload())
-                + " faster than " + t.bold(worst.source().name());
+        String text = Advice.speedVerdict(best.source().name(), best.medianDownload(), worst.source().name(), worst.medianDownload());
         double diff = worst.bestLatency() - best.bestLatency();
         if (!Double.isNaN(diff) && Math.abs(diff) >= 1) {
-            text += diff > 0 ? ", with " + Report.ms(diff) + " less latency" : ", but has " + Report.ms(-diff) + " more latency";
+            boolean same = best.medianDownload() / worst.medianDownload() < Advice.SAME_SPEED;
+            if (same) {
+                Report.Run quicker = diff > 0 ? best : worst;
+                text += ", and " + quicker.source().name() + " answers " + Report.ms(Math.abs(diff)) + " sooner";
+            } else {
+                text += diff > 0 ? ", with " + Report.ms(diff) + " less latency" : ", but has " + Report.ms(-diff) + " more latency";
+            }
         }
         return text;
     }

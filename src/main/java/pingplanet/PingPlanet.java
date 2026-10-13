@@ -97,14 +97,19 @@ public final class PingPlanet {
         // With --json the results go to stdout and the human-readable view to stderr.
         View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
 
+        java.util.Optional<String> defaultName = defaultName(Net.INTERNET);
+        if (sources.size() > 1) view.connections(sources, defaultName.orElse(null));
         List<Report.Run> runs = new ArrayList<>();
         for (Net.Source source : sources) {
             runs.add(new Report.Run(source, worldRun(o, servers, source, view)));
         }
         if (runs.size() > 1) {
             view.compare(runs);
-            defaultName(Net.INTERNET).flatMap(name -> Advice.world(runs, name))
-                    .ifPresent(advice -> view.warning(advice.message(), advice.howTo()));
+            if (!warnIfRoutedTheSame(runs.stream().map(Report.Run::source).toList(),
+                    runs.stream().map(Report.Run::medianDownload).toList(), view)) {
+                defaultName.flatMap(name -> Advice.world(runs, name))
+                        .ifPresent(advice -> view.warning(advice.message(), advice.howTo()));
+            }
         }
 
         if (o.json && runs.size() > 1) Report.runsJson(out, runs);
@@ -187,6 +192,25 @@ public final class PingPlanet {
         return routes.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(routes.getFirst().iface());
     }
 
+    /**
+     * Identical speeds on Linux, with a connection lacking its source route, almost
+     * always mean every test left through the default interface. Says so and
+     * returns true, because any advice based on those numbers would be wrong.
+     */
+    private static boolean warnIfRoutedTheSame(List<Net.Source> sources, List<Double> mbps, View view) {
+        if (!Advice.sameSpeeds(mbps)) return false;
+        for (Net.Source source : sources) {
+            java.util.Optional<List<String>> fix = Net.linuxRouteFix(source);
+            if (fix.isPresent()) {
+                view.warning("These connections got the same speed, which on Linux usually means every test left through the "
+                        + "default interface: " + source.name() + " has no source route yet. Add it once (until reboot), "
+                        + "then run PingPlanet again to compare them for real:", fix.get());
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void warnAboutRouting(Net.Source source, View view) {
         Net.linuxRouteFix(source).ifPresent(commands -> view.warning(
                 "Linux routes by destination, so this test may still leave through the default interface instead of "
@@ -210,6 +234,14 @@ public final class PingPlanet {
             if (o.json) Report.lanJson(out, result);
             return 0;
         }
+        InetAddress target;
+        try {
+            target = InetAddress.getByName(host);
+        } catch (java.net.UnknownHostException e) {
+            throw new IOException("unknown host " + host, e);
+        }
+        java.util.Optional<String> defaultName = defaultName(target);
+        view.connections(sources, defaultName.orElse(null));
         List<Report.LanRun> runs = new ArrayList<>();
         for (Net.Source source : sources) {
             try {
@@ -220,12 +252,11 @@ public final class PingPlanet {
             }
         }
         view.lanCompare(runs);
-        try {
-            InetAddress target = InetAddress.getByName(host);
-            defaultName(target).flatMap(name -> Advice.lan(runs, name))
+        List<Report.LanRun> ok = runs.stream().filter(r -> r.result() != null).toList();
+        if (!warnIfRoutedTheSame(ok.stream().map(Report.LanRun::source).toList(),
+                ok.stream().map(r -> r.result().download().mbps()).toList(), view)) {
+            defaultName.flatMap(name -> Advice.lan(runs, name))
                     .ifPresent(advice -> view.warning(advice.message(), advice.howTo()));
-        } catch (java.net.UnknownHostException e) {
-            // every run already failed on this; nothing to advise
         }
         if (o.json) Report.lanRunsJson(out, runs);
         return runs.stream().anyMatch(r -> r.result() != null) ? 0 : 1;

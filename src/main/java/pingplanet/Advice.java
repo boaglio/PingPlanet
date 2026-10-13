@@ -18,6 +18,26 @@ record Advice(Net.Source current, Net.Source better, String reason) {
     static final double MIN_SPEEDUP = 1.2;
     static final double MAX_EXTRA_LATENCY_MS = 20;
     static final double MIN_LATENCY_GAIN_MS = 5;
+    /** Speeds within 10% of each other are "about the same": the normal spread between two runs. */
+    static final double SAME_SPEED = 1.1;
+
+    /** "eth0 is 2.8× faster than wlan0", or "eth0 and wlan0 are about as fast" when the gap is noise. */
+    static String speedVerdict(String fast, double fastMbps, String slow, double slowMbps) {
+        if (slowMbps > 0 && fastMbps / slowMbps < SAME_SPEED) {
+            return fast + " and " + slow + " are about as fast (" + Report.mbps(fastMbps) + " vs " + Report.mbps(slowMbps) + ")";
+        }
+        String times = slowMbps > 0 ? String.format(Locale.ROOT, "%.1f×", fastMbps / slowMbps) : "much";
+        return fast + " is " + times + " faster than " + slow;
+    }
+
+    /** True when every measured connection got about the same download speed. */
+    static boolean sameSpeeds(List<Double> mbps) {
+        List<Double> measured = mbps.stream().filter(m -> !Double.isNaN(m) && m > 0).toList();
+        if (measured.size() < 2) return false;
+        double max = measured.stream().mapToDouble(Double::doubleValue).max().orElseThrow();
+        double min = measured.stream().mapToDouble(Double::doubleValue).min().orElseThrow();
+        return max / min < SAME_SPEED;
+    }
 
     String message() {
         return "Your default connection " + current.name() + " is not the best one: " + reason + ". Your apps use "

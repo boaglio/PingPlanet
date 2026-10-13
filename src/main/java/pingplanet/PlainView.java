@@ -101,6 +101,13 @@ final class PlainView implements View {
     }
 
     @Override
+    public void connections(List<Net.Source> sources, String defaultName) {
+        out.println("Testing " + sources.size() + " connections: " + String.join(", ", sources.stream()
+                .map(s -> s.label() + (s.name().equals(defaultName) ? " (default)" : "")).toList()));
+        out.println();
+    }
+
+    @Override
     public void lanError(String message) {
         out.println("  Failed: " + message);
         out.println();

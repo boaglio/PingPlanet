@@ -188,6 +188,36 @@ class ViewTest {
     }
 
     @Test
+    void listsEveryConnectionBeforeTesting() throws Exception {
+        Net.Source eth = new Net.Source("enp8s0", "Ethernet", java.net.InetAddress.getByName("192.168.0.10"));
+        Net.Source wifi = new Net.Source("wlo1", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
+        String screen = Term.strip(render(100, view -> view.connections(List.of(eth, wifi), "enp8s0")));
+        assertTrue(screen.contains("2 connections will be tested"), screen);
+        assertTrue(screen.contains("enp8s0  192.168.0.10") && screen.contains("● default"), screen);
+        assertTrue(screen.contains("wlo1    192.168.0.23"), screen);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        new PlainView(new PrintStream(bytes, true, StandardCharsets.UTF_8)).connections(List.of(eth, wifi), "enp8s0");
+        assertTrue(bytes.toString(StandardCharsets.UTF_8)
+                .contains("Testing 2 connections: enp8s0 192.168.0.10 (default), wlo1 192.168.0.23"));
+    }
+
+    @Test
+    void sameSpeedsAreNotCalledFaster() throws Exception {
+        Net.Source eth = new Net.Source("enp8s0", "Ethernet", java.net.InetAddress.getByName("192.168.0.10"));
+        Net.Source wifi = new Net.Source("wlo1", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
+        Server br = new Server("BR", "Brazil", "São Paulo", "Vultr", -23.55, -46.63, URI.create("https://a.example/f"));
+        List<Report.Run> runs = List.of(
+                new Report.Run(eth, List.of(new Report.ServerResult(br, new Latency(List.of(3.0), 0),
+                        new Throughput(190_625_000, 5_000_000_000L), null))),    // 305 Mbps
+                new Report.Run(wifi, List.of(new Report.ServerResult(br, new Latency(List.of(3.4), 0),
+                        new Throughput(188_125_000, 5_000_000_000L), null))));   // 301 Mbps
+        String screen = Term.strip(render(100, view -> view.compare(runs)));
+        assertFalse(screen.contains("faster than"), screen);
+        assertTrue(screen.contains("enp8s0 and wlo1 are about as fast"), screen);
+    }
+
+    @Test
     void listsInterfacesAndWarnings() throws Exception {
         Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
         String screen = Term.strip(render(100, view -> {

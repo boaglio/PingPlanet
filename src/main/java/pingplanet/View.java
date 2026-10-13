@@ -51,6 +51,9 @@ interface View {
     /** Side by side LAN results when several interfaces were tested. */
     void lanCompare(List<Report.LanRun> runs);
 
+    /** Before the first run: every connection that will be tested; {@code defaultName} may be null. */
+    void connections(List<Net.Source> sources, String defaultName);
+
     /** Side by side results when the same test ran through several interfaces. */
     void compare(List<Report.Run> runs);
 
