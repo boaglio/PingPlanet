@@ -47,8 +47,21 @@ JAR="$(find_jar || true)"
 if $build || [[ -z "$JAR" ]]; then
     command -v mvn >/dev/null 2>&1 || die "Maven (mvn) is needed to build PingPlanet. Install it from https://maven.apache.org"
     echo "Building PingPlanet..."
-    mvn -q -B -f "$DIR/pom.xml" package || die "build failed."
+    # Maven's own Guava prints four sun.misc.Unsafe warnings on recent Java; they are not about PingPlanet.
+    # "|| true": grep fails when it has nothing to print; only Maven's own status counts (pipefail).
+    mvn -q -B -f "$DIR/pom.xml" package 2>&1 \
+        | { grep -v -E '^WARNING: (A terminally deprecated method in sun\.misc\.Unsafe|sun\.misc\.Unsafe::|Please consider reporting this to the maintainers of class com\.google)' || true; } \
+        || die "build failed."
     JAR="$(find_jar)" || die "build finished but no jar was found in $DIR/target."
 fi
 
-exec "$JAVA" -jar "$JAR" "${args[@]+"${args[@]}"}"
+# Run a copy, never the build output: Java reads classes from the jar while it runs, so
+# rebuilding (which rewrites target/*.jar in place) would break a PingPlanet already open.
+# The copy is swapped in with a rename, and a running PingPlanet keeps the old file.
+RUN_JAR="$DIR/target/run/pingplanet.jar"
+if [[ ! -f "$RUN_JAR" || "$JAR" -nt "$RUN_JAR" ]]; then
+    mkdir -p "$DIR/target/run"
+    cp "$JAR" "$RUN_JAR.$$" && mv -f "$RUN_JAR.$$" "$RUN_JAR" || die "could not copy the jar to $RUN_JAR"
+fi
+
+exec "$JAVA" -jar "$RUN_JAR" "${args[@]+"${args[@]}"}"

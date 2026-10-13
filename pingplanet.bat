@@ -82,14 +82,28 @@ if not defined JAR (
     goto fail
 )
 
-rem ---- run: the window without a console, or the terminal test here ------
+rem ---- run a copy, never the build output ---------------------------------
+rem Java reads classes from the jar while it runs, so rebuilding would break a PingPlanet
+rem that is already open. Windows refuses to replace a jar in use: then the previous copy runs.
 :run
+set "RUNJAR=%DIR%\target\run\pingplanet.jar"
+if not exist "%DIR%\target\run" mkdir "%DIR%\target\run"
+copy /y "%JAR%" "%RUNJAR%" >nul 2>&1
+if errorlevel 1 (
+    if not exist "%RUNJAR%" (
+        echo pingplanet: could not copy the jar to %RUNJAR%.
+        goto fail
+    )
+    if defined BUILD echo pingplanet: another PingPlanet is still running the previous build; close it to use the new one.
+)
+
+rem ---- the window without a console, or the terminal test here -----------
 if not defined ARGS (
-    start "PingPlanet" "%JAVAW%" -jar "%JAR%"
+    start "PingPlanet" "%JAVAW%" -jar "%RUNJAR%"
     endlocal
     exit /b 0
 )
-"%JAVA%" -jar "%JAR%"%ARGS%
+"%JAVA%" -jar "%RUNJAR%"%ARGS%
 set "CODE=%ERRORLEVEL%"
 echo %CMDCMDLINE% | find /i "/c" >nul && pause
 endlocal & exit /b %CODE%
