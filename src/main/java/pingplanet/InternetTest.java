@@ -2,9 +2,6 @@ package pingplanet;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -27,28 +24,28 @@ final class InternetTest {
     }
 
     /**
-     * Times TCP handshakes to the server's port. A connect takes one round trip and,
-     * unlike ICMP ping, needs no root privileges and passes most firewalls.
-     * DNS is resolved once up front so it does not count.
+     * Times small HTTP requests on an open connection (see {@link HttpPing}).
+     * The first request is a warm-up and is not counted: it pays for the server
+     * waking up and caches filling.
      */
     static Latency latency(Server server, int samples) {
-        InetAddress address;
-        try {
-            address = InetAddress.getByName(server.host());
-        } catch (IOException e) {
-            return new Latency(List.of(), samples);
-        }
         List<Double> times = new ArrayList<>();
         int lost = 0;
-        for (int i = 0; i < samples; i++) {
-            try (Socket socket = new Socket()) {
-                long start = System.nanoTime();
-                socket.connect(new InetSocketAddress(address, server.port()), (int) TIMEOUT.toMillis());
-                times.add((System.nanoTime() - start) / 1e6);
+        try (HttpPing ping = new HttpPing(server.url(), (int) TIMEOUT.toMillis())) {
+            try {
+                ping.ping();
             } catch (IOException e) {
-                lost++;
+                return new Latency(List.of(), samples); // cannot even connect
             }
-            pause(100);
+            for (int i = 0; i < samples; i++) {
+                pause(100);
+                try {
+                    times.add(ping.ping());
+                } catch (IOException e) {
+                    lost++;
+                    ping.close();
+                }
+            }
         }
         return new Latency(times, lost);
     }
@@ -109,7 +106,7 @@ final class InternetTest {
             long start = firstByte.get();
             if (start == 0) {
                 Exception e = failure.get();
-                throw e != null ? asIOException(e) : new IOException("no data from " + server.host());
+                throw e != null ? asIOException(e) : new IOException("no data from " + server.host() + " in " + TIMEOUT.toSeconds() + " s");
             }
             long end = start + duration.toNanos();
             while (System.nanoTime() < end && running.get() > 0) {

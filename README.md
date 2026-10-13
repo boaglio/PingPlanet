@@ -26,7 +26,7 @@ every server colored by latency, and a download ranking:
 
 - **Internet test in 20 countries**: latency, jitter and download speed to public test servers in the Americas, Europe, Africa, the Middle East, Asia and Oceania, plus Cloudflare's nearest edge. Run `pingplanet list` to see them all.
 - **Local network test**: run `pingplanet serve` on one machine and `pingplanet lan <host>` on another to measure latency, download and upload between them, like `iperf`.
-- **No root needed**: latency is timed with TCP handshakes rather than ICMP ping, so it works for normal users and through most firewalls.
+- **Honest latency**: like browser speed tests, it times tiny HTTP requests on an already open connection. Connection setup is never timed, so busy servers that are slow to accept new connections do not inflate the result, and no root access is needed (unlike ICMP ping).
 - **Accurate on fast links**: transfers use several parallel connections (`--streams`), and timing starts at the first byte, so connection setup is not counted.
 - **JSON output** (`--json`) for scripts, cron jobs and dashboards.
 - **Your own servers**: export the list with `pingplanet list --csv`, edit it, and pass it back with `--servers`.
@@ -106,7 +106,7 @@ The server listens on TCP port 7357, so allow it in the firewall of the machine 
 
 | Measure  | Internet | LAN |
 |----------|----------|-----|
-| Latency  | Median of 5 TCP connects to the server's HTTPS port | Median of 20 one-byte echoes on an open connection |
+| Latency  | Median of 5 one-byte HTTP requests on an open connection, after one warm-up request | Median of 20 one-byte echoes on an open connection |
 | Jitter   | Mean difference between consecutive latency samples | same |
 | Download | HTTP download of a large test file over N connections for S seconds | Server streams data over N connections for S seconds |
 | Upload   | not measured (the public servers only offer downloads) | Client streams data to the server |
@@ -117,7 +117,7 @@ The test files are hosted by [Vultr](https://www.vultr.com), [Hetzner](https://w
 
 ### Behind a proxy
 
-Latency needs direct TCP access, so it shows `-` behind a proxy. Downloads can go through an HTTP proxy with the standard Java settings:
+Latency needs a direct connection to the server, so it shows `-` behind a proxy. Downloads can go through an HTTP proxy with the standard Java settings:
 
 ```sh
 java -Dhttps.proxyHost=proxy.example.com -Dhttps.proxyPort=3128 -jar target/pingplanet-0.1.0.jar

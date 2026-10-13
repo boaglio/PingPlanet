@@ -3,7 +3,7 @@
 # lat,lon = where to draw the server on the world map (leave empty to skip it).
 # Copy this file and pass it with --servers to use your own list.
 code,country,city,provider,lat,lon,url
-ANY,Nearest edge,,Cloudflare,,,https://speed.cloudflare.com/__down?bytes=100000000
+ANY,Nearest edge,,Cloudflare,,,https://speed.cloudflare.com/__down?bytes=25000000
 BR,Brazil,São Paulo,Vultr,-23.55,-46.63,https://sao-br-ping.vultr.com/vultr.com.100MB.bin
 CL,Chile,Santiago,Vultr,-33.45,-70.67,https://scl-cl-ping.vultr.com/vultr.com.100MB.bin
 MX,Mexico,Mexico City,Vultr,19.43,-99.13,https://mex-mx-ping.vultr.com/vultr.com.100MB.bin
