@@ -113,6 +113,39 @@ class GuiTest {
         }
     }
 
+    @Test
+    void screenshotsAreSavedAsPngs() throws Exception {
+        java.nio.file.Path folder = java.nio.file.Path.of("target", "screenshot-test");
+        if (java.nio.file.Files.isDirectory(folder)) {
+            try (var old = java.nio.file.Files.list(folder)) {
+                for (java.nio.file.Path f : old.toList()) java.nio.file.Files.delete(f);
+            }
+        }
+        JPanel[] root = new JPanel[1];
+        SwingUtilities.invokeAndWait(() -> {
+            root[0] = Gui.content(null, Server.builtIn());
+            root[0].setSize(1000, 700);
+            root[0].addNotify();
+            layout(root[0]);
+        });
+        java.time.LocalDateTime now = java.time.LocalDateTime.of(2026, 10, 13, 8, 15, 30);
+        java.nio.file.Path[] files = new java.nio.file.Path[2];
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                files[0] = Screenshot.save(root[0], folder, now);
+                files[1] = Screenshot.save(root[0], folder, now); // same second: must not overwrite
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        assertEquals("pingplanet-20261013-081530.png", files[0].getFileName().toString());
+        assertEquals("pingplanet-20261013-081530-2.png", files[1].getFileName().toString());
+        BufferedImage img = javax.imageio.ImageIO.read(files[0].toFile());
+        assertEquals(1000, img.getWidth());
+        assertEquals(700, img.getHeight());
+        assertEquals(2000, Screenshot.capture(root[0], 2).getWidth()); // HiDPI: twice the pixels
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private static void paint(Component c) {

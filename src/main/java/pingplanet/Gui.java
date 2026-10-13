@@ -4,6 +4,15 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import java.awt.BorderLayout;
+import java.awt.Desktop;
+import java.awt.FlowLayout;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -17,6 +26,8 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.KeyStroke;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -93,11 +104,52 @@ final class Gui {
             if (frame != null) SwingUtilities.updateComponentTreeUI(frame);
             theme.setText(dark ? "☀ Light" : "☾ Dark");
         });
+        JButton shot = new JButton("📷 Screenshot");
+        shot.setToolTipText("Save the window as a picture (Ctrl+Shift+S)");
+        shot.addActionListener(e -> {
+            if (frame != null) screenshot(frame);
+        });
+        if (frame != null) {
+            frame.getRootPane().registerKeyboardAction(e -> screenshot(frame),
+                    KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                    JComponent.WHEN_IN_FOCUSED_WINDOW);
+        }
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.setOpaque(false);
+        buttons.add(shot);
+        buttons.add(theme);
         JPanel right = new JPanel(new BorderLayout());
         right.setOpaque(false);
-        right.add(theme, BorderLayout.NORTH);
+        right.add(buttons, BorderLayout.NORTH);
         header.add(right, BorderLayout.EAST);
         return header;
+    }
+
+    /** Saves the window to ~/Pictures and says where, with a way to open the folder. */
+    private static void screenshot(JFrame frame) {
+        Path file;
+        try {
+            file = Screenshot.save(frame.getContentPane(), Screenshot.defaultFolder(), LocalDateTime.now());
+        } catch (IOException | RuntimeException e) {
+            JOptionPane.showMessageDialog(frame, "Could not save the screenshot: " + e.getMessage(), "PingPlanet",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        Object[] options = Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)
+                ? new Object[] {"Open folder", "Copy path", "OK"} : new Object[] {"Copy path", "OK"};
+        int choice = JOptionPane.showOptionDialog(frame, "Screenshot saved to\n" + file, "PingPlanet",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[options.length - 1]);
+        if (choice < 0) return;
+        String picked = (String) options[choice];
+        if (picked.equals("Copy path")) {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(file.toString()), null);
+        } else if (picked.equals("Open folder")) {
+            try {
+                Desktop.getDesktop().open(file.getParent().toFile());
+            } catch (IOException | RuntimeException e) {
+                // the path is in the message already
+            }
+        }
     }
 
     static void applyTheme(boolean dark) {

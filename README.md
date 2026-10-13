@@ -32,6 +32,7 @@ every server colored by latency, and a download ranking:
 - **Desktop window** (light and dark themes): Internet, LAN and Server tabs, a dotted world map with each
   server colored by latency and a pulse on the one being tested, live results, a download ranking, a
   comparison of your connections, an overall progress bar with the time left, and a Stop button.
+  **Screenshot** (Ctrl+Shift+S) saves the window as a PNG in your Pictures folder, ready to share.
 
 - **Internet test in 20 countries**: latency, jitter and download speed to public test servers in the Americas, Europe, Africa, the Middle East, Asia and Oceania, plus Cloudflare's nearest edge. Run `pingplanet list` to see them all.
 - **Local network test**: run `pingplanet serve` on one machine and `pingplanet lan <host>` on another to measure latency, download and upload between them, like `iperf`.
