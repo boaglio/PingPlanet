@@ -6,6 +6,11 @@
   <a href="https://github.com/boaglio/PingPlanet/actions/workflows/build.yml"><img src="https://github.com/boaglio/PingPlanet/actions/workflows/build.yml/badge.svg" alt="Build"></a>
 </p>
 
+PingPlanet has a **window** and a **terminal** mode. Double-click the jar, or run it with no arguments, and
+the window opens: a world map that lights up as servers answer, live results, speed gauges for your local
+network and a built-in server for LAN tests. Any argument (`pingplanet world`, `pingplanet lan …`) runs it in
+the terminal instead, which also works over SSH and on machines without a desktop.
+
 In a terminal PingPlanet shows a live, colorful dashboard: an animated progress bar while it measures,
 a table with signal bars and speed gauges that fill as each download runs, a **braille world map** with
 every server colored by latency, and a download ranking:
@@ -24,6 +29,10 @@ every server colored by latency, and a download ranking:
 
 ## Features
 
+- **Desktop window** (light and dark themes): Internet, LAN and Server tabs, a dotted world map with each
+  server colored by latency and a pulse on the one being tested, live results, a download ranking, a
+  comparison of your connections, an overall progress bar with the time left, and a Stop button.
+
 - **Internet test in 20 countries**: latency, jitter and download speed to public test servers in the Americas, Europe, Africa, the Middle East, Asia and Oceania, plus Cloudflare's nearest edge. Run `pingplanet list` to see them all.
 - **Local network test**: run `pingplanet serve` on one machine and `pingplanet lan <host>` on another to measure latency, download and upload between them, like `iperf`.
 - **Honest latency**: like browser speed tests, it times tiny HTTP requests on an already open connection. Connection setup is never timed, so busy servers that are slow to accept new connections do not inflate the result, and no root access is needed (unlike ICMP ping).
@@ -39,8 +48,9 @@ every server colored by latency, and a download ranking:
 You need Java 21 or newer and Maven.
 
 ```sh
-./pingplanet.sh            # Linux and macOS (builds on the first run)
-pingplanet.bat             # Windows
+./pingplanet.sh            # Linux and macOS (builds on the first run), opens the window
+pingplanet.bat             # Windows, opens the window
+./pingplanet.sh world      # the internet test in the terminal
 ```
 
 Or build and run the jar yourself:
@@ -55,7 +65,9 @@ Pass `--build` to the launcher to rebuild after pulling new code.
 ## Usage
 
 ```
-pingplanet [world] [options]     test internet servers in many countries (default)
+pingplanet                       open the window (on a desktop, with no arguments)
+pingplanet gui [--servers FILE]  open the window
+pingplanet world [options]       test internet servers in many countries
 pingplanet lan <host>[:port]     test the local network against "pingplanet serve"
 pingplanet serve [--port N]      wait for "pingplanet lan" tests from other machines
 pingplanet list                  show the internet test servers

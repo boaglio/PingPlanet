@@ -3,6 +3,7 @@ rem PingPlanet launcher for Windows.
 rem Builds the jar with Maven on the first run, then runs it.
 rem
 rem Usage: pingplanet.bat [--build] [pingplanet arguments]   (pingplanet.bat --help lists them)
+rem With no arguments it opens the PingPlanet window.
 rem   --build   rebuild the jar before starting (after pulling new code, for example)
 
 setlocal
@@ -26,7 +27,11 @@ goto parse
 
 rem ---- Java: prefer JAVA_HOME, fall back to the PATH --------------------
 set "JAVA=java"
-if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA=%JAVA_HOME%\bin\java.exe"
+set "JAVAW=javaw"
+if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" (
+    set "JAVA=%JAVA_HOME%\bin\java.exe"
+    set "JAVAW=%JAVA_HOME%\bin\javaw.exe"
+)
 
 "%JAVA%" -version >nul 2>&1
 if errorlevel 1 (
@@ -77,8 +82,13 @@ if not defined JAR (
     goto fail
 )
 
-rem ---- run in this console -----------------------------------------------
+rem ---- run: the window without a console, or the terminal test here ------
 :run
+if not defined ARGS (
+    start "PingPlanet" "%JAVAW%" -jar "%JAR%"
+    endlocal
+    exit /b 0
+)
 "%JAVA%" -jar "%JAR%"%ARGS%
 set "CODE=%ERRORLEVEL%"
 echo %CMDCMDLINE% | find /i "/c" >nul && pause

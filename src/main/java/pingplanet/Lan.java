@@ -199,7 +199,7 @@ final class Lan {
         }
         long giveUp = deadline + CONNECT_TIMEOUT_MS * 1_000_000L;
         long lastUpdate = 0;
-        while (threads.stream().anyMatch(Thread::isAlive) && System.nanoTime() < giveUp) {
+        while (threads.stream().anyMatch(Thread::isAlive) && System.nanoTime() < giveUp && !InternetTest.stopRequested()) {
             long now = System.nanoTime();
             if (now < deadline && now - lastUpdate > Progress.INTERVAL_NANOS) {
                 progress.update(bytes.sum(), now - start);

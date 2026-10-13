@@ -118,7 +118,7 @@ final class InternetTest {
         try {
             long waitUntil = System.nanoTime() + firstByteWait.toNanos();
             long lastUpdate = 0;
-            while (firstByte.get() == 0 && running.get() > 0 && System.nanoTime() < waitUntil) {
+            while (firstByte.get() == 0 && running.get() > 0 && System.nanoTime() < waitUntil && !stopRequested()) {
                 if (System.nanoTime() - lastUpdate > Progress.INTERVAL_NANOS) {
                     progress.update(0, 0);
                     lastUpdate = System.nanoTime();
@@ -132,7 +132,7 @@ final class InternetTest {
                         : new IOException("no data from " + server.host() + " in " + firstByteWait.toSeconds() + " s");
             }
             long end = start + duration.toNanos();
-            while (System.nanoTime() < end && running.get() > 0) {
+            while (System.nanoTime() < end && running.get() > 0 && !stopRequested()) {
                 long now = System.nanoTime();
                 if (now - lastUpdate > Progress.INTERVAL_NANOS) {
                     progress.update(bytes.sum(), now - start);
@@ -199,6 +199,11 @@ final class InternetTest {
 
     private static IOException asIOException(Exception e) {
         return e instanceof IOException io ? io : new IOException(e.getMessage() != null ? e.getMessage() : e.toString(), e);
+    }
+
+    /** True when the thread running the test was interrupted (cancelled); the caller ends early. */
+    static boolean stopRequested() {
+        return Thread.currentThread().isInterrupted();
     }
 
     static void pause(long millis) {

@@ -3,6 +3,7 @@
 # Builds the jar with Maven on the first run, then runs it.
 #
 # Usage: ./pingplanet.sh [--build] [pingplanet arguments]   (./pingplanet.sh --help lists them)
+# With no arguments it opens the PingPlanet window (on a desktop).
 #   --build   rebuild the jar before starting (after pulling new code, for example)
 
 set -euo pipefail
