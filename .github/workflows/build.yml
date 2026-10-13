@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build with the minimum supported Java version so the jar runs on Java 21+.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build
+        run: mvn -B package
+
+      - name: Name the jar
+        id: jar
+        run: |
+          version=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
+          cp "target/pingplanet-$version.jar" "target/PingPlanet-$version.jar"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "file=target/PingPlanet-$version.jar" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PingPlanet-${{ steps.jar.outputs.version }}
+          path: ${{ steps.jar.outputs.file }}
+          if-no-files-found: error
+
+    outputs:
+      version: ${{ steps.jar.outputs.version }}
+
+  # Pushing a tag like v1.0.1 publishes a GitHub release with the jar attached.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check the tag matches the pom version
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "${{ needs.build.outputs.version }}" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the pom.xml version ${{ needs.build.outputs.version }}"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: PingPlanet-${{ needs.build.outputs.version }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "PingPlanet-${{ needs.build.outputs.version }}.jar" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "PingPlanet ${{ needs.build.outputs.version }}" \
+            --generate-notes

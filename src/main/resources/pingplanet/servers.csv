@@ -1,0 +1,30 @@
+# PingPlanet test servers: public download files hosted in each country.
+# code = ISO 3166 country code, used by --countries (ANY = nearest anycast edge).
+# lat,lon = where to draw the server on the world map (leave empty to skip it).
+# Copy this file and pass it with --servers to use your own list.
+code,country,city,provider,lat,lon,url
+ANY,Nearest edge,,Cloudflare,,,https://speed.cloudflare.com/__down?bytes=100000000
+BR,Brazil,São Paulo,Vultr,-23.55,-46.63,https://sao-br-ping.vultr.com/vultr.com.100MB.bin
+CL,Chile,Santiago,Vultr,-33.45,-70.67,https://scl-cl-ping.vultr.com/vultr.com.100MB.bin
+MX,Mexico,Mexico City,Vultr,19.43,-99.13,https://mex-mx-ping.vultr.com/vultr.com.100MB.bin
+US,United States,New Jersey,Vultr,40.55,-74.46,https://nj-us-ping.vultr.com/vultr.com.100MB.bin
+US,United States,Los Angeles,Vultr,34.05,-118.24,https://lax-ca-us-ping.vultr.com/vultr.com.100MB.bin
+CA,Canada,Toronto,Vultr,43.65,-79.38,https://tor-ca-ping.vultr.com/vultr.com.100MB.bin
+GB,United Kingdom,London,Vultr,51.51,-0.13,https://lon-gb-ping.vultr.com/vultr.com.100MB.bin
+FR,France,Paris,Vultr,48.86,2.35,https://par-fr-ping.vultr.com/vultr.com.100MB.bin
+FR,France,Roubaix,OVH,50.69,3.17,https://proof.ovh.net/files/100Mb.dat
+DE,Germany,Frankfurt,Vultr,50.11,8.68,https://fra-de-ping.vultr.com/vultr.com.100MB.bin
+DE,Germany,Falkenstein,Hetzner,50.48,12.37,https://fsn1-speed.hetzner.com/100MB.bin
+NL,Netherlands,Amsterdam,Vultr,52.37,4.9,https://ams-nl-ping.vultr.com/vultr.com.100MB.bin
+ES,Spain,Madrid,Vultr,40.42,-3.7,https://mad-es-ping.vultr.com/vultr.com.100MB.bin
+PL,Poland,Warsaw,Vultr,52.23,21.01,https://waw-pl-ping.vultr.com/vultr.com.100MB.bin
+SE,Sweden,Stockholm,Vultr,59.33,18.07,https://sto-se-ping.vultr.com/vultr.com.100MB.bin
+FI,Finland,Helsinki,Hetzner,60.17,24.94,https://hel1-speed.hetzner.com/100MB.bin
+IL,Israel,Tel Aviv,Vultr,32.09,34.78,https://tlv-il-ping.vultr.com/vultr.com.100MB.bin
+ZA,South Africa,Johannesburg,Vultr,-26.2,28.05,https://jnb-za-ping.vultr.com/vultr.com.100MB.bin
+IN,India,Mumbai,Vultr,19.08,72.88,https://bom-in-ping.vultr.com/vultr.com.100MB.bin
+SG,Singapore,Singapore,Vultr,1.35,103.82,https://sgp-ping.vultr.com/vultr.com.100MB.bin
+JP,Japan,Tokyo,Vultr,35.68,139.69,https://hnd-jp-ping.vultr.com/vultr.com.100MB.bin
+KR,South Korea,Seoul,Vultr,37.57,126.98,https://sel-kor-ping.vultr.com/vultr.com.100MB.bin
+AU,Australia,Sydney,Vultr,-33.87,151.21,https://syd-au-ping.vultr.com/vultr.com.100MB.bin
+AU,Australia,Melbourne,Vultr,-37.81,144.96,https://mel-au-ping.vultr.com/vultr.com.100MB.bin
