@@ -16,6 +16,37 @@ final class Report {
     record LanResult(String host, int port, Latency latency, Throughput download, Throughput upload) {
     }
 
+    /** One complete world test through one interface. */
+    record Run(Net.Source source, List<ServerResult> results) {
+
+        long reached() {
+            return results.stream().filter(r -> r.error() == null).count();
+        }
+
+        /** Median of the servers' latencies, or NaN when none answered. */
+        double medianLatency() {
+            return median(results.stream()
+                    .filter(r -> r.latency() != null && r.latency().reachable())
+                    .map(r -> r.latency().medianMs()).toList());
+        }
+
+        /** Latency to the nearest server, or NaN when none answered: shows what the connection itself adds. */
+        double bestLatency() {
+            return results.stream()
+                    .filter(r -> r.latency() != null && r.latency().reachable())
+                    .mapToDouble(r -> r.latency().medianMs()).min().orElse(Double.NaN);
+        }
+
+        /** Median of the servers' download speeds, or NaN when none was measured. */
+        double medianDownload() {
+            return median(results.stream().filter(r -> r.download() != null).map(r -> r.download().mbps()).toList());
+        }
+    }
+
+    static double median(List<Double> values) {
+        return new Latency(values, 0).medianMs();
+    }
+
     private Report() {
     }
 
@@ -53,6 +84,21 @@ final class Report {
     }
 
     // ---- lan ---------------------------------------------------------------
+
+    /** Several runs: [{"interface": ..., "address": ..., "results": [...]}, ...]. */
+    static void runsJson(PrintStream out, List<Run> runs) {
+        out.println("[");
+        for (int i = 0; i < runs.size(); i++) {
+            Run run = runs.get(i);
+            StringBuilder sb = new StringBuilder("{");
+            field(sb, "interface", run.source().name()).append(", ");
+            field(sb, "address", run.source().address().getHostAddress()).append(", ");
+            out.print(sb.append("\"results\": "));
+            json(out, run.results());
+            out.println(i < runs.size() - 1 ? "}," : "}");
+        }
+        out.println("]");
+    }
 
     static void lanJson(PrintStream out, LanResult r) {
         StringBuilder sb = new StringBuilder("{");

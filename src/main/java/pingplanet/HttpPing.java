@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
@@ -35,12 +36,19 @@ final class HttpPing implements AutoCloseable {
 
     private final URI url;
     private final int timeoutMs;
+    private final InetAddress source;
     private final byte[] request;
     private Socket socket;
 
     HttpPing(URI url, int timeoutMs) {
+        this(url, timeoutMs, null);
+    }
+
+    /** {@code source} is the local address to send from, or null to let the system choose. */
+    HttpPing(URI url, int timeoutMs, InetAddress source) {
         this.url = url;
         this.timeoutMs = timeoutMs;
+        this.source = source;
         String path = url.getRawPath() == null || url.getRawPath().isEmpty() ? "/" : url.getRawPath();
         if (url.getRawQuery() != null) path += "?" + url.getRawQuery();
         String host = url.getPort() == -1 ? url.getHost() : url.getHost() + ":" + url.getPort();
@@ -73,6 +81,7 @@ final class HttpPing implements AutoCloseable {
         Socket plain = new Socket();
         try {
             int port = url.getPort() != -1 ? url.getPort() : "http".equalsIgnoreCase(url.getScheme()) ? 80 : 443;
+            if (source != null) plain.bind(new InetSocketAddress(source, 0));
             plain.connect(new InetSocketAddress(url.getHost(), port), timeoutMs);
             plain.setTcpNoDelay(true);
             plain.setSoTimeout(timeoutMs);

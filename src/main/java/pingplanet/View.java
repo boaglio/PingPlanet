@@ -14,7 +14,8 @@ interface View {
 
     // ---- world -------------------------------------------------------------
 
-    void worldStart(int servers, boolean downloads, int seconds, int streams);
+    /** {@code source} is the interface the test goes out through, or null for the system default. */
+    void worldStart(int servers, boolean downloads, int seconds, int streams, Net.Source source);
 
     /** Progress counts servers whose latency is done. */
     Progress latencyProgress(int servers);
@@ -30,7 +31,7 @@ interface View {
 
     // ---- lan ---------------------------------------------------------------
 
-    void lanStart(String host, int port);
+    void lanStart(String host, int port, Net.Source source);
 
     /** Progress counts latency samples done. */
     Progress lanLatencyProgress(int samples);
@@ -44,7 +45,16 @@ interface View {
 
     void lanEnd(Report.LanResult result);
 
-    // ---- serve and list ----------------------------------------------------
+    /** Side by side results when the same test ran through several interfaces. */
+    void compare(List<Report.Run> runs);
+
+    // ---- other -------------------------------------------------------------
+
+    /** Something the user should fix for accurate results, with commands to run. */
+    void warning(String message, List<String> commands);
+
+    /** The interfaces "--interface" accepts; {@code defaultName} carries the default route, or null. */
+    void interfaces(List<Net.Source> sources, String defaultName);
 
     void serveStart(int port, List<String> addresses);
 

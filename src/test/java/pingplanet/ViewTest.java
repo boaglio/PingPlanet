@@ -77,7 +77,7 @@ class ViewTest {
         for (int columns : new int[] {120, 90, 80}) {
             for (boolean downloads : new boolean[] {true, false}) {
                 String screen = render(columns, view -> {
-                    view.worldStart(3, downloads, 5, 4);
+                    view.worldStart(3, downloads, 5, 4, null);
                     view.latencyProgress(3).update(1, 1);
                     view.latencyDone(3, 1_000_000_000);
                     for (Report.ServerResult r : results(downloads)) {
@@ -107,7 +107,7 @@ class ViewTest {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         View view = View.create(new PrintStream(bytes, true, StandardCharsets.UTF_8), Term.plain());
         assertTrue(view instanceof PlainView);
-        view.worldStart(3, true, 5, 4);
+        view.worldStart(3, true, 5, 4, null);
         view.latencyDone(3, 1);
         results(true).forEach(view::row);
         view.worldEnd(results(true), 1);
@@ -120,7 +120,7 @@ class ViewTest {
     @Test
     void lanAndListRender() {
         String lan = render(100, view -> {
-            view.lanStart("192.168.0.10", 7357);
+            view.lanStart("192.168.0.10", 7357, null);
             view.lanLatencyProgress(20).update(10, 1);
             view.lanLatency(new Latency(List.of(0.4, 0.5, 0.3), 0));
             view.lanTransferProgress("Download", 5).update(50_000_000, 1_000_000_000);
@@ -133,6 +133,49 @@ class ViewTest {
         String list = render(100, view -> view.list(Server.filter(Server.builtIn(), Set.of("BR", "JP"))));
         assertTrue(list.contains("São Paulo"));
         assertTrue(list.contains("hnd-jp-ping.vultr.com"));
+    }
+
+    @Test
+    void comparesInterfaces() throws Exception {
+        Net.Source eth = new Net.Source("eth0", "Ethernet", java.net.InetAddress.getByName("192.168.0.10"));
+        Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
+        Server br = new Server("BR", "Brazil", "São Paulo", "Vultr", -23.55, -46.63, URI.create("https://a.example/f"));
+        List<Report.Run> runs = List.of(
+                new Report.Run(eth, List.of(new Report.ServerResult(br, new Latency(List.of(3.0), 0),
+                        new Throughput(225_000_000, 5_000_000_000L), null))),     // 360 Mbps
+                new Report.Run(wifi, List.of(new Report.ServerResult(br, new Latency(List.of(12.0), 0),
+                        new Throughput(75_000_000, 5_000_000_000L), null))));     // 120 Mbps
+        String screen = Term.strip(render(100, view -> {
+            view.worldStart(1, true, 5, 4, eth);
+            view.compare(runs);
+        }));
+        assertTrue(screen.contains("eth0 192.168.0.10"), screen);
+        assertTrue(screen.contains("Interface comparison"), screen);
+        assertTrue(screen.contains("eth0 is 3.0× faster than wlan0, with 9.0 ms less latency"), screen);
+        List<String> table = java.util.Arrays.stream(screen.split("\n")).filter(l -> l.startsWith("  │") || l.startsWith("  ╭")).toList();
+        for (String line : table) assertEquals(Term.width(table.getFirst()), Term.width(line), screen);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        new PlainView(new PrintStream(bytes, true, StandardCharsets.UTF_8)).compare(runs);
+        assertTrue(bytes.toString(StandardCharsets.UTF_8).contains("wlan0 192.168.0.23"));
+    }
+
+    @Test
+    void listsInterfacesAndWarnings() throws Exception {
+        Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
+        String screen = Term.strip(render(100, view -> {
+            view.interfaces(List.of(wifi), "wlan0");
+            view.warning("route it", List.of("sudo ip rule add from 192.168.0.23 table 7357"));
+        }));
+        assertTrue(screen.contains("● default"), screen);
+        assertTrue(screen.contains("pingplanet -i wlan0"), screen);
+        assertTrue(screen.contains("sudo ip rule add from 192.168.0.23 table 7357"), screen);
+    }
+
+    @Test
+    void wrapsLongLines() {
+        assertEquals(List.of("one two", "three"), FancyView.wrap("one two three", 8));
+        assertEquals(List.of("unbreakable-word"), FancyView.wrap("unbreakable-word", 5));
     }
 
     // ---- helpers -----------------------------------------------------------

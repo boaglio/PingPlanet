@@ -21,9 +21,10 @@ final class PlainView implements View {
     // ---- world -------------------------------------------------------------
 
     @Override
-    public void worldStart(int servers, boolean downloads, int seconds, int streams) {
-        out.printf(Locale.ROOT, "PingPlanet %s: %d servers%s%n%n", PingPlanet.version(), servers,
-                downloads ? ", %d s download each over %d streams".formatted(seconds, streams) : ", latency only");
+    public void worldStart(int servers, boolean downloads, int seconds, int streams, Net.Source source) {
+        out.printf(Locale.ROOT, "PingPlanet %s: %d servers%s%s%n%n", PingPlanet.version(), servers,
+                downloads ? ", %d s download each over %d streams".formatted(seconds, streams) : ", latency only",
+                source == null ? "" : ", via " + source.label());
     }
 
     @Override
@@ -68,8 +69,9 @@ final class PlainView implements View {
     // ---- lan ---------------------------------------------------------------
 
     @Override
-    public void lanStart(String host, int port) {
-        out.printf(Locale.ROOT, "PingPlanet %s: LAN test to %s:%d%n%n", PingPlanet.version(), host, port);
+    public void lanStart(String host, int port, Net.Source source) {
+        out.printf(Locale.ROOT, "PingPlanet %s: LAN test to %s:%d%s%n%n", PingPlanet.version(), host, port,
+                source == null ? "" : " via " + source.label());
     }
 
     @Override
@@ -98,7 +100,37 @@ final class PlainView implements View {
         // every line is already printed
     }
 
-    // ---- serve and list ----------------------------------------------------
+    @Override
+    public void compare(List<Report.Run> runs) {
+        out.println();
+        out.println("Comparison:");
+        for (Report.Run run : runs) {
+            double latency = run.medianLatency();
+            double download = run.medianDownload();
+            double best = run.bestLatency();
+            out.printf(Locale.ROOT, "  %-28s reached %2d/%-2d  best latency %9s  median latency %9s  median download %12s%n",
+                    run.source().label(), run.reached(), run.results().size(), Double.isNaN(best) ? "-" : Report.ms(best),
+                    Double.isNaN(latency) ? "-" : Report.ms(latency), Double.isNaN(download) ? "-" : Report.mbps(download));
+        }
+    }
+
+    // ---- other -------------------------------------------------------------
+
+    @Override
+    public void warning(String message, List<String> commands) {
+        out.println("Warning: " + message);
+        for (String c : commands) out.println("  " + c);
+        out.println();
+    }
+
+    @Override
+    public void interfaces(List<Net.Source> sources, String defaultName) {
+        if (sources.isEmpty()) out.println("No network interfaces with an IPv4 address are up.");
+        for (Net.Source s : sources) {
+            out.printf(Locale.ROOT, "  %-12s %-16s %s%s%n", s.name(), s.address().getHostAddress(), s.displayName(),
+                    s.name().equals(defaultName) ? "  (default route)" : "");
+        }
+    }
 
     @Override
     public void serveStart(int port, List<String> addresses) {

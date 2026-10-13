@@ -31,6 +31,13 @@ class OptionsTest {
     }
 
     @Test
+    void parsesInterfaces() {
+        assertEquals(List.of("eth0", "wlan0"), Options.parse(new String[] {"-i", "eth0, wlan0"}).interfaces);
+        assertEquals(List.of("192.168.0.23"), Options.parse(new String[] {"--interface=192.168.0.23"}).interfaces);
+        assertEquals("interfaces", Options.parse(new String[] {"interfaces"}).command);
+    }
+
+    @Test
     void parsesLanTarget() {
         Options o = Options.parse(new String[] {"lan", "192.168.0.10:9000"});
         assertEquals("lan", o.command);

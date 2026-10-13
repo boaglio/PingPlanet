@@ -2,9 +2,7 @@ package pingplanet;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -29,12 +27,15 @@ public final class PingPlanet {
               pingplanet lan <host>[:port]     test the local network against "pingplanet serve"
               pingplanet serve [--port N]      wait for "pingplanet lan" tests from other machines
               pingplanet list                  show the internet test servers
+              pingplanet interfaces            show this machine's network connections
 
             Options:
               -c, --countries BR,US,JP   only test these country codes (see "list")
               -l, --latency-only         skip the download test (fast)
               -s, --seconds N            seconds per transfer test (default 5)
               -n, --streams N            parallel connections per transfer (default 4)
+              -i, --interface eth0,wlan0 test through these interfaces (names or local IPs),
+                                         one run each, then compare them
               -p, --port N               LAN port (default %d)
                   --servers FILE         use your own server list (CSV, same format as "list --csv")
                   --csv                  with "list": print the server list as CSV
@@ -76,6 +77,7 @@ public final class PingPlanet {
                 case "lan" -> lan(o, out, err);
                 case "serve" -> serve(o, out);
                 case "list" -> list(o, out);
+                case "interfaces" -> interfaces(o, out);
                 default -> throw new UsageException("unknown command: " + o.command);
             };
         } catch (IOException e) {
@@ -89,16 +91,33 @@ public final class PingPlanet {
     private static int world(Options o, PrintStream out, PrintStream err) throws IOException {
         List<Server> servers = Server.filter(servers(o), o.countries);
         if (servers.isEmpty()) throw new UsageException("no servers match --countries " + String.join(",", o.countries));
+        List<Net.Source> sources = sources(o);
         // With --json the results go to stdout and the human-readable view to stderr.
         View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
+
+        List<Report.Run> runs = new ArrayList<>();
+        for (Net.Source source : sources) {
+            runs.add(new Report.Run(source, worldRun(o, servers, source, view)));
+        }
+        if (runs.size() > 1) view.compare(runs);
+
+        if (o.json && runs.size() > 1) Report.runsJson(out, runs);
+        else if (o.json) Report.json(out, runs.getFirst().results());
+        return runs.stream().anyMatch(r -> r.reached() > 0) ? 0 : 1;
+    }
+
+    /** The whole world test through one interface ({@code source} null means the system default). */
+    private static List<Report.ServerResult> worldRun(Options o, List<Server> servers, Net.Source source, View view) {
+        InetAddress from = source == null ? null : source.address();
         long begin = System.nanoTime();
-        view.worldStart(servers.size(), !o.latencyOnly, o.seconds, o.streams);
+        view.worldStart(servers.size(), !o.latencyOnly, o.seconds, o.streams, source);
+        if (source != null) warnAboutRouting(source, view);
 
         // Latency first, to every server at once: it is light and does not skew other probes much.
         List<Latency> latencies = new ArrayList<>();
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<Latency>> futures = servers.stream()
-                    .map(s -> pool.submit(() -> InternetTest.latency(s, LATENCY_SAMPLES)))
+                    .map(s -> pool.submit(() -> InternetTest.latency(s, LATENCY_SAMPLES, from)))
                     .toList();
             Progress progress = view.latencyProgress(servers.size());
             for (long done; (done = futures.stream().filter(Future::isDone).count()) < futures.size(); ) {
@@ -119,7 +138,7 @@ public final class PingPlanet {
             if (!o.latencyOnly) {
                 try {
                     download = InternetTest.download(server, o.streams, Duration.ofSeconds(o.seconds),
-                            view.downloading(server, latency));
+                            view.downloading(server, latency), InternetTest.FIRST_BYTE_WAIT, from);
                     error = null; // reachable over HTTP even if direct TCP was blocked (by a proxy, say)
                 } catch (IOException e) {
                     error = message(e);
@@ -131,8 +150,21 @@ public final class PingPlanet {
         }
 
         view.worldEnd(results, System.nanoTime() - begin);
-        if (o.json) Report.json(out, results);
-        return results.stream().anyMatch(r -> r.error() == null) ? 0 : 1;
+        return results;
+    }
+
+    /** The interfaces from --interface, or a single null for "let the system choose". */
+    private static List<Net.Source> sources(Options o) throws IOException {
+        List<Net.Source> sources = new ArrayList<>();
+        for (String spec : o.interfaces) sources.add(Net.resolve(spec));
+        if (sources.isEmpty()) sources.add(null);
+        return sources;
+    }
+
+    private static void warnAboutRouting(Net.Source source, View view) {
+        Net.linuxRouteFix(source).ifPresent(commands -> view.warning(
+                "Linux routes by destination, so this test may still leave through the default interface instead of "
+                        + source.name() + ". For an exact result, add a source route once (until reboot):", commands));
     }
 
     private static int lan(Options o, PrintStream out, PrintStream err) throws IOException {
@@ -145,20 +177,24 @@ public final class PingPlanet {
             host = host.substring(0, colon);
         }
         Duration duration = Duration.ofSeconds(o.seconds);
+        List<Net.Source> sources = sources(o);
+        if (sources.size() > 1) throw new UsageException("lan tests one interface at a time");
+        Net.Source source = sources.getFirst();
+        InetAddress from = source == null ? null : source.address();
         View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
-        view.lanStart(host, port);
+        view.lanStart(host, port, source);
 
         Latency latency;
         try {
-            latency = Lan.latency(host, port, LAN_LATENCY_SAMPLES, view.lanLatencyProgress(LAN_LATENCY_SAMPLES));
+            latency = Lan.latency(host, port, LAN_LATENCY_SAMPLES, view.lanLatencyProgress(LAN_LATENCY_SAMPLES), from);
         } catch (java.net.ConnectException | java.net.SocketTimeoutException e) {
             throw new IOException("cannot connect to %s:%d (%s). Is \"pingplanet serve\" running there, and is the port open in its firewall?"
                     .formatted(host, port, message(e)), e);
         }
         view.lanLatency(latency);
-        Throughput download = Lan.download(host, port, o.streams, duration, view.lanTransferProgress("Download", o.seconds));
+        Throughput download = Lan.download(host, port, o.streams, duration, view.lanTransferProgress("Download", o.seconds), from);
         view.lanTransfer("Download", download);
-        Throughput upload = Lan.upload(host, port, o.streams, duration, view.lanTransferProgress("Upload", o.seconds));
+        Throughput upload = Lan.upload(host, port, o.streams, duration, view.lanTransferProgress("Upload", o.seconds), from);
         view.lanTransfer("Upload", upload);
         Report.LanResult result = new Report.LanResult(host, port, latency, download, upload);
         view.lanEnd(result);
@@ -168,7 +204,7 @@ public final class PingPlanet {
 
     private static int serve(Options o, PrintStream out) throws IOException {
         View view = View.create(out, Term.detect(out, o.noColor));
-        view.serveStart(o.port, localAddresses());
+        view.serveStart(o.port, Net.sources().stream().map(s -> s.address().getHostAddress()).toList());
         Lan.serve(o.port, view::serveTest);
         return 0;
     }
@@ -184,27 +220,10 @@ public final class PingPlanet {
         return 0;
     }
 
-    /** This machine's LAN IPv4 addresses, so "serve" can say what to type on the other machine. */
-    static List<String> localAddresses() {
-        List<String> addresses = new ArrayList<>();
-        try {
-            for (NetworkInterface nic : NetworkInterface.networkInterfaces().toList()) {
-                String name = nic.getName();
-                if (!nic.isUp() || nic.isLoopback() || nic.isVirtual()
-                        || name.startsWith("docker") || name.startsWith("br-") || name.startsWith("veth")
-                        || name.startsWith("virbr") || name.startsWith("vmnet") || name.startsWith("vboxnet")) {
-                    continue;
-                }
-                for (InetAddress a : nic.inetAddresses().toList()) {
-                    if (a instanceof Inet4Address && !a.isLoopbackAddress() && !a.isLinkLocalAddress()) {
-                        addresses.add(a.getHostAddress());
-                    }
-                }
-            }
-        } catch (IOException e) {
-            // no addresses to suggest; the view prints a placeholder
-        }
-        return addresses;
+    private static int interfaces(Options o, PrintStream out) {
+        List<Net.Route> routes = Net.defaultRoutes();
+        View.create(out, Term.detect(out, o.noColor)).interfaces(Net.sources(), routes.isEmpty() ? null : routes.getFirst().iface());
+        return 0;
     }
 
     // ---- helpers -----------------------------------------------------------
@@ -276,6 +295,7 @@ public final class PingPlanet {
         int port = Lan.DEFAULT_PORT;
         Path serversFile;
         boolean csv;
+        List<String> interfaces = List.of();
         boolean json;
         boolean noColor;
         boolean help;
@@ -303,6 +323,8 @@ public final class PingPlanet {
                     case "-s", "--seconds" -> o.seconds = range(parseInt(value != null ? value : next(args, ++i, arg), "seconds"), 1, 60, "seconds");
                     case "-n", "--streams" -> o.streams = range(parseInt(value != null ? value : next(args, ++i, arg), "streams"), 1, 32, "streams");
                     case "-p", "--port" -> o.port = parsePort(value != null ? value : next(args, ++i, arg));
+                    case "-i", "--interface" -> o.interfaces = Arrays.stream((value != null ? value : next(args, ++i, arg)).split(","))
+                            .map(String::strip).filter(x -> !x.isEmpty()).toList();
                     case "--servers" -> o.serversFile = Path.of(value != null ? value : next(args, ++i, arg));
                     default -> {
                         if (arg.startsWith("-")) throw new UsageException("unknown option: " + arg);

@@ -3,6 +3,7 @@ package pingplanet;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -108,13 +109,13 @@ final class Lan {
     // ---- client ------------------------------------------------------------
 
     static Latency latency(String host, int port, int samples) throws IOException {
-        return latency(host, port, samples, Progress.NONE);
+        return latency(host, port, samples, Progress.NONE, null);
     }
 
     /** Progress reports how many samples are done. */
-    static Latency latency(String host, int port, int samples, Progress progress) throws IOException {
+    static Latency latency(String host, int port, int samples, Progress progress, InetAddress source) throws IOException {
         long begin = System.nanoTime();
-        try (Socket socket = open(host, port, "PING")) {
+        try (Socket socket = open(host, port, "PING", source)) {
             socket.setSoTimeout(CONNECT_TIMEOUT_MS);
             InputStream in = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
@@ -143,27 +144,29 @@ final class Lan {
     }
 
     static Throughput download(String host, int port, int streams, Duration duration) throws IOException {
-        return transfer(host, port, "DOWN", streams, duration, Progress.NONE);
+        return transfer(host, port, "DOWN", streams, duration, Progress.NONE, null);
     }
 
-    static Throughput download(String host, int port, int streams, Duration duration, Progress progress) throws IOException {
-        return transfer(host, port, "DOWN", streams, duration, progress);
+    static Throughput download(String host, int port, int streams, Duration duration, Progress progress,
+                               InetAddress source) throws IOException {
+        return transfer(host, port, "DOWN", streams, duration, progress, source);
     }
 
     static Throughput upload(String host, int port, int streams, Duration duration) throws IOException {
-        return transfer(host, port, "UP", streams, duration, Progress.NONE);
+        return transfer(host, port, "UP", streams, duration, Progress.NONE, null);
     }
 
-    static Throughput upload(String host, int port, int streams, Duration duration, Progress progress) throws IOException {
-        return transfer(host, port, "UP", streams, duration, progress);
+    static Throughput upload(String host, int port, int streams, Duration duration, Progress progress,
+                             InetAddress source) throws IOException {
+        return transfer(host, port, "UP", streams, duration, progress, source);
     }
 
     private static Throughput transfer(String host, int port, String command, int streams, Duration duration,
-                                       Progress progress) throws IOException {
+                                       Progress progress, InetAddress source) throws IOException {
         // Connect all streams first so the timed window only covers data transfer.
         List<Socket> sockets = new ArrayList<>();
         try {
-            for (int i = 0; i < streams; i++) sockets.add(open(host, port, command));
+            for (int i = 0; i < streams; i++) sockets.add(open(host, port, command, source));
         } catch (IOException e) {
             closeAll(sockets);
             throw e;
@@ -211,9 +214,10 @@ final class Lan {
     }
 
     /** Connects, sends the command and checks the server answers as a PingPlanet server. */
-    private static Socket open(String host, int port, String command) throws IOException {
+    private static Socket open(String host, int port, String command, InetAddress source) throws IOException {
         Socket socket = new Socket();
         try {
+            if (source != null) socket.bind(new InetSocketAddress(source, 0));
             socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
             socket.setTcpNoDelay(true);
             socket.setSoTimeout(CONNECT_TIMEOUT_MS);

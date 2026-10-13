@@ -2,6 +2,7 @@ package pingplanet;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -31,9 +32,14 @@ final class InternetTest {
      * waking up and caches filling.
      */
     static Latency latency(Server server, int samples) {
+        return latency(server, samples, null);
+    }
+
+    /** {@code source} is the local address to send from, or null to let the system choose. */
+    static Latency latency(Server server, int samples, InetAddress source) {
         List<Double> times = new ArrayList<>();
         int lost = 0;
-        try (HttpPing ping = new HttpPing(server.pingUrl(), (int) TIMEOUT.toMillis())) {
+        try (HttpPing ping = new HttpPing(server.pingUrl(), (int) TIMEOUT.toMillis(), source)) {
             try {
                 ping.ping();
             } catch (IOException e) {
@@ -65,17 +71,24 @@ final class InternetTest {
     }
 
     static Throughput download(Server server, int streams, Duration duration, Progress progress) throws IOException {
-        return download(server, streams, duration, progress, FIRST_BYTE_WAIT);
+        return download(server, streams, duration, progress, FIRST_BYTE_WAIT, null);
     }
 
     static Throughput download(Server server, int streams, Duration duration, Progress progress, Duration firstByteWait)
             throws IOException {
+        return download(server, streams, duration, progress, firstByteWait, null);
+    }
+
+    /** {@code source} is the local address to send from, or null to let the system choose. */
+    static Throughput download(Server server, int streams, Duration duration, Progress progress, Duration firstByteWait,
+                               InetAddress source) throws IOException {
         // HTTP/1.1 so each stream gets its own TCP connection (HTTP/2 would multiplex them on one).
-        HttpClient client = HttpClient.newBuilder()
+        HttpClient.Builder builder = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+                .followRedirects(HttpClient.Redirect.NORMAL);
+        if (source != null) builder.localAddress(source);
+        HttpClient client = builder.build();
         HttpRequest request = HttpRequest.newBuilder(server.url())
                 .timeout(TIMEOUT)
                 .header("User-Agent", "PingPlanet")

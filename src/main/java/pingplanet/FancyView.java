@@ -34,6 +34,7 @@ final class FancyView implements View {
     private final Term t;
     private final int columns;
     private int liveWidth;
+    private boolean bannerShown;
 
     // world table layout, decided in latencyDone()
     private boolean downloads;
@@ -54,11 +55,20 @@ final class FancyView implements View {
     // ---- world -------------------------------------------------------------
 
     @Override
-    public void worldStart(int servers, boolean downloads, int seconds, int streams) {
+    public void worldStart(int servers, boolean downloads, int seconds, int streams, Net.Source source) {
         this.downloads = downloads;
         banner();
+        if (source != null) sourceHeading(source);
         String plan = downloads ? "%d s download per server · %d streams".formatted(seconds, streams) : "latency only";
         out.println("  " + t.fg(SKY, "◉") + " " + t.bold(servers + " servers") + t.dim(" · " + plan));
+        out.println();
+    }
+
+    /** A rule with the interface name, so runs through different interfaces stand apart. */
+    private void sourceHeading(Net.Source source) {
+        String title = " " + t.fg(SKY, "⇄") + " " + t.bold(source.name()) + " " + t.dim(source.address().getHostAddress()) + " ";
+        int rest = Math.max(4, Math.min(columns, 96) - 4 - Term.width(title));
+        out.println("  " + t.faint("──") + title + t.faint("─".repeat(rest)));
         out.println();
     }
 
@@ -204,9 +214,10 @@ final class FancyView implements View {
     // ---- lan ---------------------------------------------------------------
 
     @Override
-    public void lanStart(String host, int port) {
+    public void lanStart(String host, int port, Net.Source source) {
         banner();
-        out.println("  " + t.fg(SKY, "⇄") + " LAN test to " + t.bold(host) + t.dim(":" + port));
+        String via = source == null ? "" : t.dim(" from ") + t.bold(source.name()) + t.dim(" " + source.address().getHostAddress());
+        out.println("  " + t.fg(SKY, "⇄") + " LAN test to " + t.bold(host) + t.dim(":" + port) + via);
         out.println();
     }
 
@@ -267,6 +278,105 @@ final class FancyView implements View {
         return LINK_TIERS[LINK_TIERS.length - 1];
     }
 
+    @Override
+    public void compare(List<Report.Run> runs) {
+        out.println("  " + t.bold("Interface comparison"));
+        out.println();
+        double maxDownload = runs.stream().mapToDouble(Report.Run::medianDownload).filter(d -> !Double.isNaN(d)).max().orElse(0);
+        double lowestBest = runs.stream().mapToDouble(Report.Run::bestLatency).filter(d -> !Double.isNaN(d)).min().orElse(Double.NaN);
+        double lowestMedian = runs.stream().mapToDouble(Report.Run::medianLatency).filter(d -> !Double.isNaN(d)).min().orElse(Double.NaN);
+        boolean anyDownload = maxDownload > 0;
+        widths = anyDownload ? new int[] {10, 15, 7, 8, 8, 30} : new int[] {10, 15, 7, 8, 8};
+        out.println(border('╭', '┬', '╮'));
+        List<String> titles = new ArrayList<>(List.of(t.bold("Interface"), t.bold("Address"), t.bold("Reached"),
+                t.bold("Best"), t.bold("Median")));
+        if (anyDownload) titles.add(t.bold("Download (median)"));
+        out.println(cells(titles));
+        out.println(border('├', '┼', '┤'));
+        for (Report.Run run : runs) {
+            double latency = run.medianLatency();
+            double download = run.medianDownload();
+            List<String> c = new ArrayList<>();
+            c.add(t.bold(t.fg(CYAN, Term.cut(run.source().name(), 10))));
+            c.add(t.dim(run.source().address().getHostAddress()));
+            c.add(Term.padLeft(run.reached() + "/" + run.results().size(), 7));
+            c.add(Term.padLeft(latencyCell(run.bestLatency(), lowestBest), 8));
+            c.add(Term.padLeft(latencyCell(latency, lowestMedian), 8));
+            if (anyDownload) {
+                if (Double.isNaN(download)) {
+                    c.add(t.dim("—"));
+                } else {
+                    int color = Term.speedColor(download);
+                    String value = t.fg(color, Report.mbps(download));
+                    c.add(t.bar(download / maxDownload, 18, new int[] {color}) + " "
+                            + Term.padLeft(download == maxDownload ? t.bold(value) : value, 11));
+                }
+            }
+            out.println(cells(c));
+        }
+        out.println(border('╰', '┴', '╯'));
+        String verdict = verdict(runs);
+        if (verdict != null) out.println("  " + t.fg(YELLOW, "★") + " " + verdict);
+        out.println("  " + t.dim("Best is the latency to the nearest server: the part your connection adds."));
+        out.println();
+    }
+
+    private String latencyCell(double ms, double lowest) {
+        if (Double.isNaN(ms)) return t.dim("—");
+        String text = t.fg(Term.latencyColor(ms), Report.ms(ms));
+        return ms == lowest ? t.bold(text) : text;
+    }
+
+    /** "eth0 is 2.4× faster than wlan0, with 9 ms less latency", or null when it cannot tell. */
+    private String verdict(List<Report.Run> runs) {
+        List<Report.Run> measured = runs.stream().filter(r -> !Double.isNaN(r.medianDownload())).toList();
+        if (measured.size() < 2) return null;
+        Report.Run best = measured.stream().max(Comparator.comparingDouble(Report.Run::medianDownload)).orElseThrow();
+        Report.Run worst = measured.stream().min(Comparator.comparingDouble(Report.Run::medianDownload)).orElseThrow();
+        if (best == worst || worst.medianDownload() <= 0) return null;
+        String text = t.bold(best.source().name()) + " is "
+                + String.format(Locale.ROOT, "%.1f×", best.medianDownload() / worst.medianDownload())
+                + " faster than " + t.bold(worst.source().name());
+        double diff = worst.bestLatency() - best.bestLatency();
+        if (!Double.isNaN(diff) && Math.abs(diff) >= 1) {
+            text += diff > 0 ? ", with " + Report.ms(diff) + " less latency" : ", but has " + Report.ms(-diff) + " more latency";
+        }
+        return text;
+    }
+
+    // ---- other -------------------------------------------------------------
+
+    @Override
+    public void warning(String message, List<String> commands) {
+        List<String> lines = wrap(message, Math.max(40, Math.min(columns, 100) - 6));
+        for (int i = 0; i < lines.size(); i++) out.println("  " + t.fg(YELLOW, (i == 0 ? "⚠ " : "  ") + lines.get(i)));
+        for (String c : commands) out.println("      " + t.fg(CYAN, c));
+        out.println();
+    }
+
+    @Override
+    public void interfaces(List<Net.Source> sources, String defaultName) {
+        banner();
+        if (sources.isEmpty()) {
+            out.println("  " + t.fg(RED, "✖") + " No network interfaces with an IPv4 address are up.");
+            out.println();
+            return;
+        }
+        widths = new int[] {12, 15, 30, 13};
+        out.println(border('╭', '┬', '╮'));
+        out.println(cells(List.of(t.bold("Interface"), t.bold("Address"), t.bold("Description"), "")));
+        out.println(border('├', '┼', '┤'));
+        for (Net.Source s : sources) {
+            out.println(cells(List.of(t.bold(t.fg(CYAN, Term.cut(s.name(), 12))), s.address().getHostAddress(),
+                    t.dim(Term.cut(s.displayName(), 30)),
+                    s.name().equals(defaultName) ? t.fg(GREEN, "● default") : "")));
+        }
+        out.println(border('╰', '┴', '╯'));
+        String names = String.join(",", sources.stream().map(Net.Source::name).distinct().toList());
+        out.println("  " + t.dim("Compare them with ") + t.fg(CYAN, "pingplanet -i " + names));
+        out.println();
+    }
+
     // ---- serve and list ----------------------------------------------------
 
     @Override
@@ -317,6 +427,8 @@ final class FancyView implements View {
     // ---- pieces ------------------------------------------------------------
 
     private void banner() {
+        if (bannerShown) return; // once per run, also when testing several interfaces
+        bannerShown = true;
         List<String> lines = new ArrayList<>();
         try (InputStream in = FancyView.class.getResourceAsStream("/pingplanet/banner.txt")) {
             if (in != null) lines = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)).lines().toList();
@@ -362,6 +474,21 @@ final class FancyView implements View {
             sb.append("─".repeat(widths[i] + 2)).append(i < widths.length - 1 ? middle : right);
         }
         return "  " + t.faint(sb.toString());
+    }
+
+    static List<String> wrap(String text, int width) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            if (!line.isEmpty() && line.length() + 1 + word.length() > width) {
+                lines.add(line.toString());
+                line.setLength(0);
+            }
+            if (!line.isEmpty()) line.append(' ');
+            line.append(word);
+        }
+        if (!line.isEmpty()) lines.add(line.toString());
+        return lines;
     }
 
     private static double logScale(double mbps) {

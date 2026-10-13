@@ -28,6 +28,7 @@ every server colored by latency, and a download ranking:
 - **Local network test**: run `pingplanet serve` on one machine and `pingplanet lan <host>` on another to measure latency, download and upload between them, like `iperf`.
 - **Honest latency**: like browser speed tests, it times tiny HTTP requests on an already open connection. Connection setup is never timed, so busy servers that are slow to accept new connections do not inflate the result, and no root access is needed (unlike ICMP ping).
 - **Accurate on fast links**: transfers use several parallel connections (`--streams`), and timing starts at the first byte, so connection setup is not counted.
+- **Wired vs Wi-Fi**: test through a chosen network interface, or through several in one run and get a side-by-side comparison (`-i eth0,wlan0`).
 - **JSON output** (`--json`) for scripts, cron jobs and dashboards.
 - **Your own servers**: export the list with `pingplanet list --csv`, edit it, and pass it back with `--servers`.
 - **Looks good in a terminal**: colors, live gauges, rounded tables and a world map. When the output goes to a file or a pipe you get plain text instead, and `NO_COLOR` or `--no-color` turns the colors off.
@@ -58,11 +59,14 @@ pingplanet [world] [options]     test internet servers in many countries (defaul
 pingplanet lan <host>[:port]     test the local network against "pingplanet serve"
 pingplanet serve [--port N]      wait for "pingplanet lan" tests from other machines
 pingplanet list                  show the internet test servers
+pingplanet interfaces            show this machine's network connections
 
 -c, --countries BR,US,JP   only test these country codes (see "list")
 -l, --latency-only         skip the download test (fast)
 -s, --seconds N            seconds per transfer test (default 5)
 -n, --streams N            parallel connections per transfer (default 4)
+-i, --interface eth0,wlan0 test through these interfaces (names or local IPs),
+                           one run each, then compare them
 -p, --port N               LAN port (default 7357)
     --servers FILE         use your own server list (CSV, same format as "list --csv")
     --csv                  with "list": print the server list as CSV
@@ -101,6 +105,30 @@ pingplanet lan 192.168.0.10
 `serve` prints this machine's IP addresses, so you know what to type on the other one.
 
 The server listens on TCP port 7357, so allow it in the firewall of the machine running `serve`.
+
+### Wired vs Wi-Fi
+
+If the machine has more than one connection, list them and test through each:
+
+```sh
+pingplanet interfaces                  # names and addresses, and which one is the default
+pingplanet -i eth0,wlan0 -c BR,US      # one run per interface, then a comparison table
+pingplanet lan 192.168.0.10 -i wlan0   # LAN test over Wi-Fi only
+```
+
+The comparison shows, per interface, how many servers answered, the latency to the nearest server
+(what the connection itself adds), the median latency and the median download speed.
+
+**Linux note:** Linux chooses the outgoing interface by destination, not by source address, so traffic
+for the non-default interface can still leave through the default one. PingPlanet detects this and
+prints the two commands that add a source route for that address, for example:
+
+```sh
+sudo ip route add default via 192.168.0.1 dev wlan0 table 7357
+sudo ip rule add from 192.168.0.23 table 7357
+```
+
+They last until reboot. Windows and macOS send from the chosen interface without this.
 
 ## How it measures
 
