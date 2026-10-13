@@ -38,6 +38,12 @@ class OptionsTest {
     }
 
     @Test
+    void defaultMeansTheSystemChooses() throws Exception {
+        assertEquals(java.util.Collections.singletonList(null), PingPlanet.sources(Options.parse(new String[] {"-i", "default"})));
+        assertThrows(UsageException.class, () -> PingPlanet.sources(Options.parse(new String[] {"-i", "default,eth0"})));
+    }
+
+    @Test
     void parsesLanTarget() {
         Options o = Options.parse(new String[] {"lan", "192.168.0.10:9000"});
         assertEquals("lan", o.command);

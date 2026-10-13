@@ -55,6 +55,28 @@ final class Net {
                 && !name.startsWith("virbr") && !name.startsWith("vmnet") && !name.startsWith("vboxnet");
     }
 
+    /**
+     * The connections to test when the user did not choose: one address per
+     * interface, default route first. Where the routing table is readable
+     * (Linux), only interfaces with a default route count, which leaves out VPN
+     * and overlay links such as Tailscale that do not lead to the internet.
+     */
+    static List<Source> internetSources() {
+        return internetSources(sources(), defaultRoutes());
+    }
+
+    static List<Source> internetSources(List<Source> all, List<Route> defaults) {
+        List<String> routed = defaults.stream().map(Route::iface).distinct().toList();
+        List<Source> picked = new ArrayList<>();
+        for (Source s : all) {
+            boolean seen = picked.stream().anyMatch(p -> p.name().equals(s.name()));
+            if (!seen && (routed.isEmpty() || routed.contains(s.name()))) picked.add(s);
+        }
+        // routes are sorted by metric, so this puts the default interface first
+        picked.sort(java.util.Comparator.comparingInt(s -> routed.contains(s.name()) ? routed.indexOf(s.name()) : routed.size()));
+        return picked;
+    }
+
     /** Finds a source by interface name ("wlan0") or by one of this machine's IP addresses. */
     static Source resolve(String spec) throws IOException {
         List<Source> all = sources();

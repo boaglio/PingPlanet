@@ -32,6 +32,20 @@ class NetTest {
     }
 
     @Test
+    void picksOneAddressPerInterfaceWithADefaultRouteDefaultFirst() throws IOException {
+        Net.Source eth = new Net.Source("eth0", "Ethernet", InetAddress.getByName("192.168.0.10"));
+        Net.Source eth2 = new Net.Source("eth0", "Ethernet", InetAddress.getByName("192.168.0.11"));
+        Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", InetAddress.getByName("192.168.0.23"));
+        Net.Source tailscale = new Net.Source("tailscale0", "tailscale0", InetAddress.getByName("100.64.0.5"));
+        List<Net.Route> routes = List.of(new Net.Route("eth0", "192.168.0.1", 100), new Net.Route("wlan0", "192.168.0.1", 600));
+
+        // Wi-Fi listed first by the system, but the wired default route goes first; Tailscale has no default route.
+        assertEquals(List.of(eth, wifi), Net.internetSources(List.of(wifi, tailscale, eth, eth2), routes));
+        // No routing table to read (Windows, macOS): every interface, one address each.
+        assertEquals(List.of(wifi, tailscale, eth), Net.internetSources(List.of(wifi, tailscale, eth, eth2), List.of()));
+    }
+
+    @Test
     void unknownInterfaceListsTheAvailableOnes() {
         IOException e = assertThrows(IOException.class, () -> Net.resolve("no-such-nic-42"));
         assertTrue(e.getMessage().contains("available"), e.getMessage());

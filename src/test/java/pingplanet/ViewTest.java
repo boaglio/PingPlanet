@@ -161,6 +161,33 @@ class ViewTest {
     }
 
     @Test
+    void comparesLanInterfaces() throws Exception {
+        Net.Source eth = new Net.Source("eth0", "Ethernet", java.net.InetAddress.getByName("192.168.0.10"));
+        Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
+        Net.Source usb = new Net.Source("usb0", "USB", java.net.InetAddress.getByName("10.0.0.2"));
+        Report.LanResult wired = new Report.LanResult("nas", 7357, new Latency(List.of(0.3), 0),
+                new Throughput(587_500_000, 5_000_000_000L), new Throughput(580_000_000, 5_000_000_000L)); // 940 / 928 Mbps
+        Report.LanResult wireless = new Report.LanResult("nas", 7357, new Latency(List.of(4.0), 0),
+                new Throughput(195_000_000, 5_000_000_000L), new Throughput(150_000_000, 5_000_000_000L)); // 312 / 240 Mbps
+        List<Report.LanRun> runs = List.of(new Report.LanRun(eth, wired, null), new Report.LanRun(wifi, wireless, null),
+                new Report.LanRun(usb, null, "cannot connect to nas:7357 (timed out)"));
+        String screen = Term.strip(render(100, view -> {
+            view.lanStart("nas", 7357, usb);
+            view.lanError("cannot connect to nas:7357 (timed out)");
+            view.lanCompare(runs);
+        }));
+        assertTrue(screen.contains("eth0 is 3.0× faster than wlan0 on this network"), screen);
+        assertTrue(screen.contains("✖ cannot connect"), screen);
+        List<String> table = java.util.Arrays.stream(screen.split("\n")).filter(l -> l.startsWith("  │") || l.startsWith("  ╭")).toList();
+        assertEquals(5, table.size(), screen);
+        for (String line : table) assertEquals(Term.width(table.getFirst()), Term.width(line), screen);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        new PlainView(new PrintStream(bytes, true, StandardCharsets.UTF_8)).lanCompare(runs);
+        assertTrue(bytes.toString(StandardCharsets.UTF_8).contains("usb0 10.0.0.2"));
+    }
+
+    @Test
     void listsInterfacesAndWarnings() throws Exception {
         Net.Source wifi = new Net.Source("wlan0", "Wi-Fi", java.net.InetAddress.getByName("192.168.0.23"));
         String screen = Term.strip(render(100, view -> {

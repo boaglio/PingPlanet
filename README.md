@@ -28,7 +28,7 @@ every server colored by latency, and a download ranking:
 - **Local network test**: run `pingplanet serve` on one machine and `pingplanet lan <host>` on another to measure latency, download and upload between them, like `iperf`.
 - **Honest latency**: like browser speed tests, it times tiny HTTP requests on an already open connection. Connection setup is never timed, so busy servers that are slow to accept new connections do not inflate the result, and no root access is needed (unlike ICMP ping).
 - **Accurate on fast links**: transfers use several parallel connections (`--streams`), and timing starts at the first byte, so connection setup is not counted.
-- **Wired vs Wi-Fi**: test through a chosen network interface, or through several in one run and get a side-by-side comparison (`-i eth0,wlan0`).
+- **Wired vs Wi-Fi, automatically**: every connection to the internet (cable, Wi-Fi, USB modem…) is found and tested, one after the other, with a side-by-side comparison at the end. `-i` picks specific ones.
 - **JSON output** (`--json`) for scripts, cron jobs and dashboards.
 - **Your own servers**: export the list with `pingplanet list --csv`, edit it, and pass it back with `--servers`.
 - **Looks good in a terminal**: colors, live gauges, rounded tables and a world map. When the output goes to a file or a pipe you get plain text instead, and `NO_COLOR` or `--no-color` turns the colors off.
@@ -65,8 +65,10 @@ pingplanet interfaces            show this machine's network connections
 -l, --latency-only         skip the download test (fast)
 -s, --seconds N            seconds per transfer test (default 5)
 -n, --streams N            parallel connections per transfer (default 4)
--i, --interface eth0,wlan0 test through these interfaces (names or local IPs),
-                           one run each, then compare them
+-i, --interface eth0,wlan0 test only through these interfaces (names or local IPs);
+                           "default" uses just the system's default route.
+                           Without -i, every connection to the internet is
+                           tested, one run each, then compared
 -p, --port N               LAN port (default 7357)
     --servers FILE         use your own server list (CSV, same format as "list --csv")
     --csv                  with "list": print the server list as CSV
@@ -108,12 +110,16 @@ The server listens on TCP port 7357, so allow it in the firewall of the machine 
 
 ### Wired vs Wi-Fi
 
-If the machine has more than one connection, list them and test through each:
+When the machine has more than one connection to the internet, PingPlanet tests all of them by itself:
+the default connection first, then the others, then a comparison. The LAN test does the same. On Linux
+a connection counts when it has a default route, which leaves out VPN and overlay links like Tailscale.
 
 ```sh
 pingplanet interfaces                  # names and addresses, and which one is the default
-pingplanet -i eth0,wlan0 -c BR,US      # one run per interface, then a comparison table
-pingplanet lan 192.168.0.10 -i wlan0   # LAN test over Wi-Fi only
+pingplanet -c BR,US                    # every connection, then a comparison table
+pingplanet -i wlan0                    # only Wi-Fi
+pingplanet -i default                  # only the system's default connection, as with one connection
+pingplanet lan 192.168.0.10            # LAN test over every connection
 ```
 
 The comparison shows, per interface, how many servers answered, the latency to the nearest server

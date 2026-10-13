@@ -216,9 +216,63 @@ final class FancyView implements View {
     @Override
     public void lanStart(String host, int port, Net.Source source) {
         banner();
-        String via = source == null ? "" : t.dim(" from ") + t.bold(source.name()) + t.dim(" " + source.address().getHostAddress());
-        out.println("  " + t.fg(SKY, "⇄") + " LAN test to " + t.bold(host) + t.dim(":" + port) + via);
+        if (source != null) sourceHeading(source);
+        out.println("  " + t.fg(SKY, "⇄") + " LAN test to " + t.bold(host) + t.dim(":" + port));
         out.println();
+    }
+
+    @Override
+    public void lanError(String message) {
+        endLive();
+        List<String> lines = wrap(message, Math.max(40, Math.min(columns, 100) - 6));
+        for (int i = 0; i < lines.size(); i++) out.println("  " + t.fg(RED, (i == 0 ? "✖ " : "  ") + lines.get(i)));
+        out.println();
+    }
+
+    @Override
+    public void lanCompare(List<Report.LanRun> runs) {
+        out.println("  " + t.bold("Interface comparison"));
+        out.println();
+        double max = runs.stream().filter(r -> r.result() != null)
+                .mapToDouble(r -> Math.max(r.result().download().mbps(), r.result().upload().mbps())).max().orElse(0);
+        widths = new int[] {10, 15, 8, 24, 24};
+        out.println(border('╭', '┬', '╮'));
+        out.println(cells(List.of(t.bold("Interface"), t.bold("Address"), t.bold("Latency"), t.bold("Download"), t.bold("Upload"))));
+        out.println(border('├', '┼', '┤'));
+        for (Report.LanRun run : runs) {
+            List<String> c = new ArrayList<>();
+            c.add(t.bold(t.fg(CYAN, Term.cut(run.source().name(), 10))));
+            c.add(t.dim(run.source().address().getHostAddress()));
+            Report.LanResult r = run.result();
+            if (r == null) {
+                c.add(Term.padLeft(t.dim("—"), 8));
+                c.add(t.fg(RED, "✖ " + Term.cut(run.error(), 22)));
+                c.add("");
+            } else {
+                double ms = r.latency().medianMs();
+                c.add(Term.padLeft(t.fg(Term.latencyColor(ms), Report.ms(ms)), 8));
+                c.add(speedCell(r.download().mbps(), max));
+                c.add(speedCell(r.upload().mbps(), max));
+            }
+            out.println(cells(c));
+        }
+        out.println(border('╰', '┴', '╯'));
+        List<Report.LanRun> ok = runs.stream().filter(r -> r.result() != null).toList();
+        if (ok.size() >= 2) {
+            Report.LanRun best = ok.stream().max(Comparator.comparingDouble(r -> r.result().download().mbps())).orElseThrow();
+            Report.LanRun worst = ok.stream().min(Comparator.comparingDouble(r -> r.result().download().mbps())).orElseThrow();
+            if (best != worst && worst.result().download().mbps() > 0) {
+                out.println("  " + t.fg(YELLOW, "★") + " " + t.bold(best.source().name()) + " is "
+                        + String.format(Locale.ROOT, "%.1f×", best.result().download().mbps() / worst.result().download().mbps())
+                        + " faster than " + t.bold(worst.source().name()) + " on this network");
+            }
+        }
+        out.println();
+    }
+
+    private String speedCell(double mbps, double max) {
+        int color = Term.speedColor(mbps);
+        return t.bar(max > 0 ? mbps / max : 0, 11, new int[] {color}) + " " + Term.padLeft(t.fg(color, Report.mbps(mbps)), 11);
     }
 
     @Override

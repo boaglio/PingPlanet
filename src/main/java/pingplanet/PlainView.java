@@ -101,6 +101,27 @@ final class PlainView implements View {
     }
 
     @Override
+    public void lanError(String message) {
+        out.println("  Failed: " + message);
+        out.println();
+    }
+
+    @Override
+    public void lanCompare(List<Report.LanRun> runs) {
+        out.println();
+        out.println("Comparison:");
+        for (Report.LanRun run : runs) {
+            Report.LanResult r = run.result();
+            if (r == null) {
+                out.printf(Locale.ROOT, "  %-28s failed: %s%n", run.source().label(), run.error());
+            } else {
+                out.printf(Locale.ROOT, "  %-28s latency %9s  download %12s  upload %12s%n", run.source().label(),
+                        Report.ms(r.latency().medianMs()), Report.mbps(r.download().mbps()), Report.mbps(r.upload().mbps()));
+            }
+        }
+    }
+
+    @Override
     public void compare(List<Report.Run> runs) {
         out.println();
         out.println("Comparison:");

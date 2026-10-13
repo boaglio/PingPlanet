@@ -34,8 +34,10 @@ public final class PingPlanet {
               -l, --latency-only         skip the download test (fast)
               -s, --seconds N            seconds per transfer test (default 5)
               -n, --streams N            parallel connections per transfer (default 4)
-              -i, --interface eth0,wlan0 test through these interfaces (names or local IPs),
-                                         one run each, then compare them
+              -i, --interface eth0,wlan0 test only through these interfaces (names or local IPs);
+                                         "default" uses just the system's default route.
+                                         Without -i, every connection to the internet is
+                                         tested, one run each, then compared
               -p, --port N               LAN port (default %d)
                   --servers FILE         use your own server list (CSV, same format as "list --csv")
                   --csv                  with "list": print the server list as CSV
@@ -153,11 +155,23 @@ public final class PingPlanet {
         return results;
     }
 
-    /** The interfaces from --interface, or a single null for "let the system choose". */
-    private static List<Net.Source> sources(Options o) throws IOException {
+    /**
+     * The connections to test. Without --interface, every interface that leads to
+     * the internet; a single one (or "-i default") is a plain run with no
+     * interface chosen. A null entry means "let the system choose".
+     */
+    static List<Net.Source> sources(Options o) throws IOException {
         List<Net.Source> sources = new ArrayList<>();
+        if (o.interfaces.isEmpty()) {
+            sources.addAll(Net.internetSources());
+            if (sources.size() <= 1) return java.util.Collections.singletonList(null);
+            return sources;
+        }
+        if (o.interfaces.stream().anyMatch(spec -> spec.equalsIgnoreCase("default"))) {
+            if (o.interfaces.size() > 1) throw new UsageException("\"-i default\" cannot be combined with other interfaces");
+            return java.util.Collections.singletonList(null);
+        }
         for (String spec : o.interfaces) sources.add(Net.resolve(spec));
-        if (sources.isEmpty()) sources.add(null);
         return sources;
     }
 
@@ -176,13 +190,34 @@ public final class PingPlanet {
             port = parsePort(host.substring(colon + 1));
             host = host.substring(0, colon);
         }
-        Duration duration = Duration.ofSeconds(o.seconds);
         List<Net.Source> sources = sources(o);
-        if (sources.size() > 1) throw new UsageException("lan tests one interface at a time");
-        Net.Source source = sources.getFirst();
-        InetAddress from = source == null ? null : source.address();
         View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
+
+        if (sources.size() == 1) { // one connection: errors end the program with a clear message
+            Report.LanResult result = lanRun(o, host, port, sources.getFirst(), view);
+            if (o.json) Report.lanJson(out, result);
+            return 0;
+        }
+        List<Report.LanRun> runs = new ArrayList<>();
+        for (Net.Source source : sources) {
+            try {
+                runs.add(new Report.LanRun(source, lanRun(o, host, port, source, view), null));
+            } catch (IOException e) {
+                view.lanError(message(e));
+                runs.add(new Report.LanRun(source, null, message(e)));
+            }
+        }
+        view.lanCompare(runs);
+        if (o.json) Report.lanRunsJson(out, runs);
+        return runs.stream().anyMatch(r -> r.result() != null) ? 0 : 1;
+    }
+
+    /** The LAN test through one interface ({@code source} null means the system default). */
+    private static Report.LanResult lanRun(Options o, String host, int port, Net.Source source, View view) throws IOException {
+        InetAddress from = source == null ? null : source.address();
+        Duration duration = Duration.ofSeconds(o.seconds);
         view.lanStart(host, port, source);
+        if (source != null) warnAboutRouting(source, view);
 
         Latency latency;
         try {
@@ -198,8 +233,7 @@ public final class PingPlanet {
         view.lanTransfer("Upload", upload);
         Report.LanResult result = new Report.LanResult(host, port, latency, download, upload);
         view.lanEnd(result);
-        if (o.json) Report.lanJson(out, result);
-        return 0;
+        return result;
     }
 
     private static int serve(Options o, PrintStream out) throws IOException {

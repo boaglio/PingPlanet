@@ -45,6 +45,12 @@ interface View {
 
     void lanEnd(Report.LanResult result);
 
+    /** The LAN test through one interface failed; the next one still runs. */
+    void lanError(String message);
+
+    /** Side by side LAN results when several interfaces were tested. */
+    void lanCompare(List<Report.LanRun> runs);
+
     /** Side by side results when the same test ran through several interfaces. */
     void compare(List<Report.Run> runs);
 

@@ -16,6 +16,10 @@ final class Report {
     record LanResult(String host, int port, Latency latency, Throughput download, Throughput upload) {
     }
 
+    /** A LAN test through one interface: the result, or why it failed. */
+    record LanRun(Net.Source source, LanResult result, String error) {
+    }
+
     /** One complete world test through one interface. */
     record Run(Net.Source source, List<ServerResult> results) {
 
@@ -96,6 +100,23 @@ final class Report {
             out.print(sb.append("\"results\": "));
             json(out, run.results());
             out.println(i < runs.size() - 1 ? "}," : "}");
+        }
+        out.println("]");
+    }
+
+    /** Several LAN runs: [{"interface": ..., "address": ..., "result": {...} or null, "error": ...}, ...]. */
+    static void lanRunsJson(PrintStream out, List<LanRun> runs) {
+        out.println("[");
+        for (int i = 0; i < runs.size(); i++) {
+            LanRun run = runs.get(i);
+            StringBuilder sb = new StringBuilder("  {");
+            field(sb, "interface", run.source().name()).append(", ");
+            field(sb, "address", run.source().address().getHostAddress()).append(", ");
+            field(sb, "error", run.error()).append(", \"result\": ");
+            out.print(sb);
+            if (run.result() == null) out.print("null\n");
+            else lanJson(out, run.result());
+            out.println(i < runs.size() - 1 ? "  }," : "  }");
         }
         out.println("]");
     }
