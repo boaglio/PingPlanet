@@ -18,6 +18,16 @@ final class PlainView implements View {
         this.out = out;
     }
 
+    @Override
+    public void worldPlan(int connections, int servers, boolean downloads, int seconds) {
+        // plain output has no live progress
+    }
+
+    @Override
+    public void lanPlan(int connections, int seconds) {
+        // plain output has no live progress
+    }
+
     // ---- world -------------------------------------------------------------
 
     @Override

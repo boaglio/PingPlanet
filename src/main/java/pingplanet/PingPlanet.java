@@ -99,6 +99,7 @@ public final class PingPlanet {
 
         java.util.Optional<String> defaultName = defaultName(Net.INTERNET);
         if (sources.size() > 1) view.connections(sources, defaultName.orElse(null));
+        view.worldPlan(sources.size(), servers.size(), !o.latencyOnly, o.seconds);
         List<Report.Run> runs = new ArrayList<>();
         for (Net.Source source : sources) {
             runs.add(new Report.Run(source, worldRun(o, servers, source, view)));
@@ -228,6 +229,7 @@ public final class PingPlanet {
         }
         List<Net.Source> sources = sources(o);
         View view = o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor));
+        view.lanPlan(sources.size(), o.seconds);
 
         if (sources.size() == 1) { // one connection: errors end the program with a clear message
             Report.LanResult result = lanRun(o, host, port, sources.getFirst(), view);

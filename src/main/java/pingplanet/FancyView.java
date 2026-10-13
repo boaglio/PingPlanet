@@ -33,8 +33,20 @@ final class FancyView implements View {
     private final PrintStream out;
     private final Term t;
     private final int columns;
-    private int liveWidth;
+    private int liveLines; // lines the live area takes now: 0, 1, or 2 with the overall progress
     private boolean bannerShown;
+
+    // overall progress, set up by worldPlan() / lanPlan()
+    private Overall overall;
+    private int connections;
+    private int connection;      // 1-based, the one being tested
+    private double connectionStart; // units done when it started
+    private double latencyUnits;
+    private double downloadUnits;
+    private int servers;
+    private int server;          // 1-based, the one being downloaded from
+    private int lanSeconds;
+    private String phase;
 
     // world table layout, decided in latencyDone()
     private boolean downloads;
@@ -52,11 +64,60 @@ final class FancyView implements View {
         this.columns = columns;
     }
 
+    // ---- overall progress ----------------------------------------------------
+
+    /** Per connection: the latency phase (~3 s for all servers at once), then each download. */
+    @Override
+    public void worldPlan(int connections, int servers, boolean downloads, int seconds) {
+        this.connections = connections;
+        this.servers = servers;
+        latencyUnits = 3;
+        downloadUnits = downloads ? seconds + 1 : 0;
+        overall = new Overall(connections * (latencyUnits + servers * downloadUnits), System.nanoTime());
+    }
+
+    /** Per connection: 20 pings (~1 s), then the download and the upload. */
+    @Override
+    public void lanPlan(int connections, int seconds) {
+        this.connections = connections;
+        lanSeconds = seconds;
+        latencyUnits = 1;
+        overall = new Overall(connections * (1 + 2.0 * seconds), System.nanoTime());
+    }
+
+    private void startConnection() {
+        connection++;
+        server = 0;
+        if (overall != null) connectionStart = overall.doneUnits();
+    }
+
+    /** The line under the live one: bar, percent, where we are, time left. Null before a plan. */
+    private String status() {
+        if (overall == null) return null;
+        double f = overall.fraction();
+        StringBuilder where = new StringBuilder();
+        if (connections > 1) where.append(" · connection ").append(Math.max(connection, 1)).append('/').append(connections);
+        if (server > 0) where.append(" · server ").append(server).append('/').append(servers);
+        if (phase != null) where.append(" · ").append(phase);
+        String left = overall.remainingNanos(System.nanoTime()).stream()
+                .mapToObj(n -> " · " + Overall.remainingText(n)).findFirst().orElse("");
+        String head = "  " + t.dim("Overall") + " " + t.bar(f, 24, BRAND) + " "
+                + t.bold(Term.padLeft(String.format(Locale.ROOT, "%.0f%%", f * 100), 4));
+        // Never wider than the terminal: a wrapped line would break redrawing.
+        for (String tail : List.of(where + left, where.toString(), "")) {
+            String line = head + t.dim(tail);
+            if (Term.width(line) < columns) return line;
+        }
+        return head;
+    }
+
     // ---- world -------------------------------------------------------------
 
     @Override
     public void worldStart(int servers, boolean downloads, int seconds, int streams, Net.Source source) {
         this.downloads = downloads;
+        startConnection();
+        phase = null;
         banner();
         if (source != null) sourceHeading(source);
         String plan = downloads ? "%d s download per server · %d streams".formatted(seconds, streams) : "latency only";
@@ -74,13 +135,19 @@ final class FancyView implements View {
 
     @Override
     public Progress latencyProgress(int servers) {
-        return (done, nanos) -> live("  " + t.fg(SKY, spinner()) + " Measuring latency  "
+        return (done, nanos) -> {
+            if (overall != null) overall.within(latencyUnits * done / servers);
+            phase = "latency";
+            live("  " + t.fg(SKY, spinner()) + " Measuring latency  "
                 + t.bar((double) done / servers, 24, BRAND) + "  " + t.dim(done + "/" + servers));
+        };
     }
 
     @Override
     public void latencyDone(int servers, long nanos) {
         endLive();
+        if (overall != null) overall.step(latencyUnits);
+        phase = null;
         out.println("  " + t.fg(GREEN, "✔") + " Latency measured for " + servers + " servers " + t.dim("in " + Report.duration(nanos)));
         out.println();
 
@@ -106,7 +173,9 @@ final class FancyView implements View {
 
     @Override
     public Progress downloading(Server server, Latency latency) {
+        this.server++;
         return (bytes, nanos) -> {
+            if (overall != null) overall.within(Math.min(downloadUnits, nanos / 1e9));
             String cell;
             if (nanos == 0) {
                 cell = t.fg(SKY, spinner()) + " " + t.dim("connecting…");
@@ -124,6 +193,7 @@ final class FancyView implements View {
     @Override
     public void row(Report.ServerResult r) {
         endLive();
+        if (overall != null && downloads) overall.step(downloadUnits);
         String cell = null;
         if (downloads) {
             if (r.download() != null) {
@@ -215,6 +285,8 @@ final class FancyView implements View {
 
     @Override
     public void lanStart(String host, int port, Net.Source source) {
+        startConnection();
+        phase = null;
         banner();
         if (source != null) sourceHeading(source);
         out.println("  " + t.fg(SKY, "⇄") + " LAN test to " + t.bold(host) + t.dim(":" + port));
@@ -237,6 +309,7 @@ final class FancyView implements View {
     @Override
     public void lanError(String message) {
         endLive();
+        if (overall != null) overall.skipTo(connectionStart + 1 + 2.0 * lanSeconds); // the rest of this connection
         List<String> lines = wrap(message, Math.max(40, Math.min(columns, 100) - 6));
         for (int i = 0; i < lines.size(); i++) out.println("  " + t.fg(RED, (i == 0 ? "✖ " : "  ") + lines.get(i)));
         out.println();
@@ -289,13 +362,18 @@ final class FancyView implements View {
 
     @Override
     public Progress lanLatencyProgress(int samples) {
-        return (done, nanos) -> live(label("Latency") + t.fg(SKY, spinner()) + " "
-                + t.bar((double) done / samples, 20, BRAND) + "  " + t.dim(done + "/" + samples + " pings"));
+        return (done, nanos) -> {
+            if (overall != null) overall.within(latencyUnits * done / samples);
+            phase = "latency";
+            live(label("Latency") + t.fg(SKY, spinner()) + " "
+                    + t.bar((double) done / samples, 20, BRAND) + "  " + t.dim(done + "/" + samples + " pings"));
+        };
     }
 
     @Override
     public void lanLatency(Latency l) {
         endLive();
+        if (overall != null) overall.step(latencyUnits);
         double ms = l.medianMs();
         out.println(label("Latency") + t.signal(ms) + "  " + t.bold(t.fg(Term.latencyColor(ms), Report.ms(ms)))
                 + t.dim("   jitter ") + Report.ms(l.jitterMs())
@@ -305,6 +383,8 @@ final class FancyView implements View {
     @Override
     public Progress lanTransferProgress(String label, int seconds) {
         return (bytes, nanos) -> {
+            if (overall != null) overall.within(Math.min(seconds, nanos / 1e9));
+            phase = label.toLowerCase(Locale.ROOT);
             double mbps = new Throughput(bytes, nanos).mbps();
             long left = Math.max(0, seconds - nanos / 1_000_000_000L);
             live(transferLine(label, mbps, false) + "  " + t.fg(SKY, spinner()) + t.dim(" " + left + " s"));
@@ -314,6 +394,7 @@ final class FancyView implements View {
     @Override
     public void lanTransfer(String label, Throughput throughput) {
         endLive();
+        if (overall != null) overall.step(lanSeconds);
         out.println(transferLine(label, throughput.mbps(), true));
     }
 
@@ -569,18 +650,29 @@ final class FancyView implements View {
         return Term.SPINNER[(int) (System.nanoTime() / 80_000_000L % Term.SPINNER.length)];
     }
 
-    /** Draws over the current line; the next live() or endLive() replaces it. */
+    /**
+     * Draws the live area: {@code line}, and under it the overall progress when
+     * there is a plan. The next live() or endLive() replaces both.
+     */
     private void live(String line) {
-        int width = Term.width(line);
-        out.print("\r" + line + " ".repeat(Math.max(0, liveWidth - width)));
+        StringBuilder sb = new StringBuilder();
+        if (liveLines == 2) sb.append(UP);
+        sb.append('\r').append(CLEAR_LINE).append(line);
+        String status = status();
+        if (status != null) sb.append('\n').append('\r').append(CLEAR_LINE).append(status);
+        liveLines = status != null ? 2 : 1;
+        out.print(sb);
         out.flush();
-        liveWidth = width;
     }
 
+    /** Clears the live area and leaves the cursor where it started. */
     private void endLive() {
-        if (liveWidth == 0) return;
-        out.print(Term.rewind(liveWidth));
+        if (liveLines == 0) return;
+        out.print("\r" + CLEAR_LINE + (liveLines == 2 ? UP + "\r" + CLEAR_LINE : ""));
         out.flush();
-        liveWidth = 0;
+        liveLines = 0;
     }
+
+    private static final String UP = "\u001B[1A";
+    private static final String CLEAR_LINE = "\u001B[2K";
 }

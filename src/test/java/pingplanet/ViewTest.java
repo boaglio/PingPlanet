@@ -87,8 +87,7 @@ class ViewTest {
                     }
                     view.worldEnd(results(downloads), 20_000_000_000L);
                 });
-                List<String> table = java.util.Arrays.stream(screen.split("\n")) // lines() would also split at \r
-                        .map(l -> Term.strip(l.substring(l.lastIndexOf('\r') + 1))) // what is left on screen after live redraws
+                List<String> table = screen(screen).stream()
                         .filter(l -> l.startsWith("  ╭") || l.startsWith("  │") || l.startsWith("  ├") || l.startsWith("  ╰"))
                         .toList();
                 assertEquals(3 + 3 + 1, table.size(), screen);
@@ -235,7 +234,82 @@ class ViewTest {
         assertEquals(List.of("unbreakable-word"), FancyView.wrap("unbreakable-word", 5));
     }
 
+    @Test
+    void overallProgressShowsWhileRunningAndIsGoneAfterwards() {
+        Server br = new Server("BR", "Brazil", "São Paulo", "Vultr", -23.55, -46.63, URI.create("https://a.example/f"));
+        Latency latency = new Latency(List.of(12.0), 0);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        FancyView view = new FancyView(new PrintStream(bytes, true, StandardCharsets.UTF_8), COLOR, 100);
+        view.worldPlan(2, 2, true, 5);              // 2 × (3 + 2 × 6) = 30 units
+        view.worldStart(2, true, 5, 4, null);
+        view.latencyProgress(2).update(2, 1);
+        view.latencyDone(2, 1);                       // 3 units
+        view.downloading(br, latency).update(1_000_000, 3_000_000_000L); // +3 units
+
+        List<String> during = screen(bytes.toString(StandardCharsets.UTF_8));
+        String status = during.getLast();
+        assertTrue(status.startsWith("  Overall "), String.join("\n", during));
+        assertTrue(status.contains(" 20%"), status);  // 6 of 30 units
+        assertTrue(status.contains("connection 1/2 · server 1/2"), status);
+        assertTrue(during.get(during.size() - 2).contains("│ BR "), "the live row sits right above it");
+
+        view.row(new Report.ServerResult(br, latency, new Throughput(1_000_000, 5_000_000_000L), null));
+        List<String> after = screen(bytes.toString(StandardCharsets.UTF_8));
+        assertTrue(after.stream().noneMatch(l -> l.contains("Overall")), String.join("\n", after));
+        assertTrue(after.getLast().contains("│ BR "), "the final row replaced the live area");
+    }
+
+    @Test
+    void statusLineNeverWrapsOnNarrowTerminals() {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        FancyView view = new FancyView(new PrintStream(bytes, true, StandardCharsets.UTF_8), COLOR, 50);
+        view.worldPlan(3, 25, true, 5);
+        view.worldStart(25, true, 5, 4, null);
+        view.latencyProgress(25).update(10, 1);
+        for (String line : screen(bytes.toString(StandardCharsets.UTF_8))) assertTrue(Term.width(line) < 50 || !line.contains("Overall"), line);
+    }
+
     // ---- helpers -----------------------------------------------------------
+
+    /**
+     * What a terminal shows after {@code raw}: replays carriage returns, newlines,
+     * cursor-up and clear-line, and drops colors.
+     */
+    static List<String> screen(String raw) {
+        List<StringBuilder> rows = new java.util.ArrayList<>();
+        rows.add(new StringBuilder());
+        int row = 0;
+        int col = 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\u001B\\[([0-9;]*)([A-Za-z])|(.)", java.util.regex.Pattern.DOTALL)
+                .matcher(raw);
+        while (m.find()) {
+            if (m.group(2) != null) {
+                switch (m.group(2)) {
+                    case "A" -> row = Math.max(0, row - (m.group(1).isEmpty() ? 1 : Integer.parseInt(m.group(1))));
+                    case "K" -> rows.get(row).setLength(0);
+                    default -> { } // colors
+                }
+                continue;
+            }
+            char c = m.group(3).charAt(0);
+            if (c == '\r') {
+                col = 0;
+            } else if (c == '\n') {
+                row++;
+                col = 0;
+                if (row == rows.size()) rows.add(new StringBuilder());
+            } else {
+                StringBuilder line = rows.get(row);
+                while (line.length() < col) line.append(' ');
+                if (col < line.length()) line.setCharAt(col, c);
+                else line.append(c);
+                col++;
+            }
+        }
+        List<String> lines = rows.stream().map(StringBuilder::toString).collect(java.util.stream.Collectors.toList());
+        while (!lines.isEmpty() && lines.getLast().isBlank()) lines.removeLast();
+        return lines;
+    }
 
     private static String render(int columns, java.util.function.Consumer<View> script) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

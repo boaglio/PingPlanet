@@ -31,7 +31,7 @@ final class Term {
 
     static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
     private static final String[] EIGHTHS = {"", "▏", "▎", "▍", "▌", "▋", "▊", "▉"};
-    private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*m");
+    private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*[A-Za-z]");
 
     /** Live, animated, Unicode output. When false, PingPlanet prints plain text. */
     final boolean fancy;
@@ -174,11 +174,6 @@ final class Term {
 
     static String cut(String text, int width) {
         return text.length() <= width ? text : text.substring(0, width - 1) + "…";
-    }
-
-    /** Moves to the start of the line so the next print overwrites it. */
-    static String rewind(int previousWidth) {
-        return "\r" + " ".repeat(previousWidth) + "\r";
     }
 
     // ---- ratings -----------------------------------------------------------

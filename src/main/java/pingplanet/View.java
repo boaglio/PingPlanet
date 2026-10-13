@@ -12,6 +12,14 @@ interface View {
         return term.fancy ? new FancyView(out, term) : new PlainView(out);
     }
 
+    // ---- overall progress ----------------------------------------------------
+
+    /** Before a world test: what the whole run will do, for an overall progress bar. */
+    void worldPlan(int connections, int servers, boolean downloads, int seconds);
+
+    /** Before a LAN test: what the whole run will do, for an overall progress bar. */
+    void lanPlan(int connections, int seconds);
+
     // ---- world -------------------------------------------------------------
 
     /** {@code source} is the interface the test goes out through, or null for the system default. */
