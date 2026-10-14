@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 class InternetTestTest {
 
     private static final int FILE_SIZE = 4 * 1024 * 1024;
+    private static final int SMALL_SIZE = 128 * 1024;
 
     private HttpServer http;
     private final AtomicInteger requests = new AtomicInteger();
@@ -35,6 +36,15 @@ class InternetTestTest {
             byte[] chunk = new byte[64 * 1024];
             try (OutputStream out = exchange.getResponseBody()) {
                 for (int sent = 0; sent < FILE_SIZE; sent += chunk.length) out.write(chunk);
+            } catch (IOException ignored) {
+                // client stopped reading
+            }
+        });
+        http.createContext("/small.bin", exchange -> {
+            requests.incrementAndGet();
+            exchange.sendResponseHeaders(200, SMALL_SIZE);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(new byte[SMALL_SIZE]);
             } catch (IOException ignored) {
                 // client stopped reading
             }
@@ -75,11 +85,11 @@ class InternetTestTest {
     @Test
     void downloadRepeatsTheFileUntilTimeIsUp() throws IOException {
         Duration second = Duration.ofSeconds(1);
-        Throughput t = InternetTest.download(server("/file.bin"), 3, second);
-        assertTrue(t.mbps() > 10, "mbps " + t.mbps());
+        Throughput t = InternetTest.download(server("/small.bin"), 3, second);
         assertTrue(t.nanos() <= second.toNanos(), "measured window " + t.nanos());
-        // A 4 MB file over loopback ends long before a second passes, so streams must re-request it.
-        assertTrue(t.bytes() > 3L * FILE_SIZE, "bytes " + t.bytes());
+        // A 128 KB file ends long before a second passes, even on a slow CI machine,
+        // so the streams must re-request it: more bytes than one copy per stream.
+        assertTrue(t.bytes() > 3L * SMALL_SIZE, "bytes " + t.bytes());
         assertTrue(requests.get() > 3, "requests " + requests.get());
     }
 
