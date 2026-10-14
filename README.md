@@ -21,7 +21,25 @@
 - **Window or terminal**: a desktop window (light and dark), or a colorful terminal dashboard that also works over SSH.
 - **Share results**: a Screenshot button (Ctrl+Shift+S), Markdown reports (`--markdown`) and JSON (`--json`).
 
-## Run
+## Download
+
+Get the latest version from [Releases](https://github.com/boaglio/PingPlanet/releases/latest). The Windows and
+Linux downloads include Java, so there is nothing else to install.
+
+| System | File | Run |
+|---|---|---|
+| Windows | `PingPlanet-<version>-windows-x64.zip` | Unzip, then open `PingPlanet.exe`. For the terminal, use `pingplanet-cli.exe`. |
+| Ubuntu, Debian | `pingplanet_<version>_amd64.deb` | `sudo apt install ./pingplanet_<version>_amd64.deb`, then open PingPlanet from the menu. |
+| Other Linux | `PingPlanet-<version>-linux-x64.tar.gz` | Extract, then run `PingPlanet/bin/PingPlanet`. |
+| Any, with Java 21+ | `PingPlanet-<version>.jar` | `java -jar PingPlanet-<version>.jar` |
+
+The .deb installs to `/opt/pingplanet`. To type `pingplanet` in a terminal:
+`sudo ln -s /opt/pingplanet/bin/PingPlanet /usr/local/bin/pingplanet`.
+
+Windows may warn that the app is from an unknown publisher, because it is not signed: choose
+**More info → Run anyway**.
+
+## Build from source
 
 You need Java 21 or newer and Maven.
 
@@ -60,6 +78,9 @@ and start timing at the first byte. Each download can use a few hundred MB on a 
 Test files are hosted by [Vultr](https://www.vultr.com), [Hetzner](https://www.hetzner.com),
 [OVH](https://www.ovhcloud.com) and [Cloudflare](https://speed.cloudflare.com). The map uses
 [Natural Earth](https://www.naturalearthdata.com) data.
+
+To publish a release, set the version in `pom.xml` and push a tag like `v0.1.0`: GitHub Actions builds
+the packages (`tools/package.sh`) and attaches them to the release.
 
 ## License
 
