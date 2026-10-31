@@ -61,7 +61,9 @@ final class Lan {
             }
             // Platform threads: a virtual thread waking from a socket read can add a millisecond, which would
             // swamp LAN round trips that are often well under that.
-            Thread.ofPlatform().daemon().name("lan-" + socket.getRemoteSocketAddress()).start(() -> handle(socket, onTest));
+            Thread thread = new Thread(() -> handle(socket, onTest), "lan-" + socket.getRemoteSocketAddress());
+            thread.setDaemon(true);
+            thread.start();
         }
     }
 
@@ -179,7 +181,7 @@ final class Lan {
         long start = System.nanoTime();
         long deadline = start + duration.toNanos();
         for (Socket socket : sockets) {
-            threads.add(Thread.ofVirtual().start(() -> {
+            threads.add(Platform.worker("lan-transfer", () -> {
                 byte[] buf = new byte[BUFFER];
                 try {
                     if (down) {

@@ -27,3 +27,8 @@ replay_pid*
 target/
 
 .idea/
+
+# Android
+.gradle/
+android/build/
+local.properties

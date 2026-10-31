@@ -3,9 +3,6 @@ package pingplanet;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,18 +79,7 @@ final class InternetTest {
     /** {@code source} is the local address to send from, or null to let the system choose. */
     static Throughput download(Server server, int streams, Duration duration, Progress progress, Duration firstByteWait,
                                InetAddress source) throws IOException {
-        // HTTP/1.1 so each stream gets its own TCP connection (HTTP/2 would multiplex them on one).
-        HttpClient.Builder builder = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL);
-        if (source != null) builder.localAddress(source);
-        HttpClient client = builder.build();
-        HttpRequest request = HttpRequest.newBuilder(server.url())
-                .timeout(TIMEOUT)
-                .header("User-Agent", "PingPlanet")
-                .header("Cache-Control", "no-cache")
-                .build();
+        Fetcher fetcher = Platform.fetcher(server.url(), TIMEOUT, source);
 
         LongAdder bytes = new LongAdder();
         AtomicLong firstByte = new AtomicLong();
@@ -104,9 +90,9 @@ final class InternetTest {
 
         List<Thread> threads = new ArrayList<>();
         for (int i = 0; i < streams; i++) {
-            threads.add(Thread.ofVirtual().name("download-" + i).start(() -> {
+            threads.add(Platform.worker("download-" + i, () -> {
                 try {
-                    pump(client, request, bytes, firstByte, open, stop, failure);
+                    pump(fetcher, server, bytes, firstByte, open, stop, failure);
                 } catch (Exception e) {
                     if (!stop.stopped) failure.set(e);
                 } finally {
@@ -154,7 +140,7 @@ final class InternetTest {
                     // closing only to unblock the reader
                 }
             }
-            client.shutdownNow();
+            fetcher.close();
             for (Thread t : threads) {
                 try {
                     t.join(1_000); // a stalled stream is abandoned; virtual threads never block exit
@@ -165,14 +151,14 @@ final class InternetTest {
         }
     }
 
-    private static void pump(HttpClient client, HttpRequest request, LongAdder bytes, AtomicLong firstByte,
+    private static void pump(Fetcher fetcher, Server server, LongAdder bytes, AtomicLong firstByte,
                              Set<InputStream> open, Stopper stop, AtomicReference<Exception> failure)
             throws IOException, InterruptedException {
         byte[] buffer = new byte[64 * 1024];
         while (!stop.stopped) {
-            HttpResponse<InputStream> response;
+            Fetcher.Response response;
             try {
-                response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                response = fetcher.get();
             } catch (IOException e) {
                 if (stop.stopped) return;
                 failure.set(e); // remembered in case no stream ever gets data
@@ -180,8 +166,8 @@ final class InternetTest {
                 continue;
             }
             try (InputStream in = response.body()) {
-                if (response.statusCode() >= 400) {
-                    throw new IOException("HTTP " + response.statusCode() + " from " + request.uri().getHost());
+                if (response.status() >= 400) {
+                    throw new IOException("HTTP " + response.status() + " from " + server.host());
                 }
                 open.add(in);
                 for (int n; !stop.stopped && (n = in.read(buffer)) != -1; ) {
@@ -189,7 +175,7 @@ final class InternetTest {
                     bytes.add(n);
                 }
             } catch (IOException e) {
-                if (stop.stopped || response.statusCode() >= 400) throw e;
+                if (stop.stopped || response.status() >= 400) throw e;
                 failure.set(e); // the connection broke mid-transfer: start a new one
             } finally {
                 open.remove(response.body());

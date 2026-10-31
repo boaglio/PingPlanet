@@ -129,7 +129,7 @@ final class HttpPing implements AutoCloseable {
         long length = -1;
         boolean keepAlive = true;
         double serverMs = 0;
-        for (String line : head.toString(StandardCharsets.ISO_8859_1).split("\r\n")) {
+        for (String line : new String(head.toByteArray(), StandardCharsets.ISO_8859_1).split("\r\n")) {
             String lower = line.toLowerCase(Locale.ROOT);
             if (lower.startsWith("content-length:")) {
                 try {

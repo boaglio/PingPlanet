@@ -4,7 +4,8 @@
 # Usage: tools/package.sh <pingplanet.jar> <version> <output folder>
 #
 #   Linux:   PingPlanet-<version>-linux-x64.tar.gz  and  pingplanet_<version>_amd64.deb
-#   Windows: PingPlanet-<version>-windows-x64.zip   (run from Git Bash; the release workflow does)
+#   Windows: PingPlanet-<version>-windows-x64.zip  and  PingPlanet-<version>-windows-x64.msi
+#            (run from Git Bash, the release workflow does; the .msi needs the WiX Toolset)
 #
 # The bundled Java runtime holds only the modules PingPlanet uses, so nobody needs Java installed.
 set -euo pipefail
@@ -60,10 +61,22 @@ case "$(uname -s)" in
         ;;
     MINGW* | MSYS* | CYGWIN*)
         # PingPlanet.exe opens the window without a console; pingplanet-cli.exe is for the terminal.
-        printf 'win-console=true\nicon=%s\n' "$icons/pingplanet.ico" > "$work/cli.properties"
+        printf 'win-console=true\nwin-shortcut=false\nwin-menu=false\nicon=%s\n' "$icons/pingplanet.ico" > "$work/cli.properties"
         jpackage "${common[@]}" --type app-image --icon "$icons/pingplanet.ico" --dest "$work/image" \
             --add-launcher "pingplanet-cli=$work/cli.properties"
         (cd "$work/image" && 7z a -tzip -bso0 "$out/PingPlanet-$version-windows-x64.zip" PingPlanet)
+        # The upgrade UUID must never change: it is how a new .msi knows to replace an installed older one.
+        jpackage "${common[@]}" --type msi --icon "$icons/pingplanet.ico" --dest "$work/msi" \
+            --add-launcher "pingplanet-cli=$work/cli.properties" \
+            --license-file "$root/LICENSE" \
+            --about-url https://github.com/boaglio/PingPlanet \
+            --win-upgrade-uuid 248e272e-e111-4612-afe8-761818bcd204 \
+            --win-dir-chooser \
+            --win-menu \
+            --win-menu-group PingPlanet \
+            --win-shortcut \
+            --win-shortcut-prompt
+        mv "$work"/msi/*.msi "$out/PingPlanet-$version-windows-x64.msi"
         ;;
     *)
         die "unsupported system $(uname -s): packages are built on Linux and Windows"

@@ -24,11 +24,13 @@
 ## Download
 
 Get the latest version from [Releases](https://github.com/boaglio/PingPlanet/releases/latest). The Windows and
-Linux downloads include Java, so there is nothing else to install.
+Linux downloads include Java and the Android app needs none, so there is nothing else to install.
 
 | System | File | Run |
 |---|---|---|
-| Windows | `PingPlanet-<version>-windows-x64.zip` | Unzip, then open `PingPlanet.exe`. For the terminal, use `pingplanet-cli.exe`. |
+| Windows installer | `PingPlanet-<version>-windows-x64.msi` | Run it, then open PingPlanet from the Start menu. For the terminal, use `pingplanet-cli.exe` in the install folder. |
+| Windows, no install | `PingPlanet-<version>-windows-x64.zip` | Unzip, then open `PingPlanet.exe`. For the terminal, use `pingplanet-cli.exe`. |
+| Android 8+ | `PingPlanet-<version>-android.apk` | Open it on the phone and allow installing from this source. |
 | Ubuntu, Debian | `pingplanet_<version>_amd64.deb` | `sudo apt install ./pingplanet_<version>_amd64.deb`, then open PingPlanet from the menu. |
 | Other Linux | `PingPlanet-<version>-linux-x64.tar.gz` | Extract, then run `PingPlanet/bin/PingPlanet`. |
 | Any, with Java 21+ | `PingPlanet-<version>.jar` | `java -jar PingPlanet-<version>.jar` |
@@ -39,6 +41,9 @@ The .deb installs to `/opt/pingplanet`. To type `pingplanet` in a terminal:
 Windows may warn that the app is from an unknown publisher, because it is not signed: choose
 **More info → Run anyway**.
 
+The Android app runs the same tests as the desktop one, on the connection the phone is using: there is no terminal
+mode or comparing of connections. On a metered connection it starts with downloads off and asks before using them.
+
 ## Build from source
 
 You need Java 21 or newer and Maven.
@@ -48,6 +53,13 @@ You need Java 21 or newer and Maven.
 pingplanet.bat             # Windows
 ./pingplanet.sh world      # the internet test in the terminal
 ./pingplanet.sh --build    # rebuild after pulling new code
+```
+
+The Android app is in `android/` and shares the test code in `src/main/java`. You need Java 21, Gradle 8.14 and
+the Android SDK (`ANDROID_HOME`):
+
+```sh
+cd android && gradle assembleDebug   # build/outputs/apk/debug/PingPlanet-debug.apk
 ```
 
 ## Usage
@@ -80,7 +92,8 @@ Test files are hosted by [Vultr](https://www.vultr.com), [Hetzner](https://www.h
 [Natural Earth](https://www.naturalearthdata.com) data.
 
 To publish a release, set the version in `pom.xml` and push a tag like `v0.1.0`: GitHub Actions builds
-the packages (`tools/package.sh`) and attaches them to the release.
+the packages (`tools/package.sh`, `android/`) and attaches them to the release. Keep one signing key for the
+Android app, or phones will refuse updates: see the `android` job in `.github/workflows/build.yml`.
 
 ## License
 

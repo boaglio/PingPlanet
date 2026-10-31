@@ -114,7 +114,7 @@ public final class PingPlanet {
         List<Server> servers = Server.filter(servers(o), o.countries);
         if (servers.isEmpty()) throw new UsageException("no servers match --countries " + String.join(",", o.countries));
         // With --json the results go to stdout and the human-readable view to stderr.
-        RecordingView view = new RecordingView(o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor)));
+        RecordingView view = new RecordingView(o.json ? new PlainView(err) : view(out, Term.detect(out, o.noColor)));
         Engine.WorldPlan plan = new Engine.WorldPlan(servers, sources(o), !o.latencyOnly, o.seconds, o.streams);
         List<Report.Run> runs = Engine.world(plan, view);
         if (o.json && runs.size() > 1) Report.runsJson(out, runs);
@@ -155,7 +155,7 @@ public final class PingPlanet {
             port = parsePort(host.substring(colon + 1));
             host = host.substring(0, colon);
         }
-        RecordingView view = new RecordingView(o.json ? new PlainView(err) : View.create(out, Term.detect(out, o.noColor)));
+        RecordingView view = new RecordingView(o.json ? new PlainView(err) : view(out, Term.detect(out, o.noColor)));
         Engine.LanPlan plan = new Engine.LanPlan(host, port, sources(o), o.seconds, o.streams);
         List<Report.LanRun> runs = Engine.lan(plan, view);
         if (o.json && runs.size() > 1) Report.lanRunsJson(out, runs);
@@ -173,7 +173,7 @@ public final class PingPlanet {
     }
 
     private static int serve(Options o, PrintStream out) throws IOException {
-        View view = View.create(out, Term.detect(out, o.noColor));
+        View view = view(out, Term.detect(out, o.noColor));
         view.serveStart(o.port, Net.sources().stream().map(s -> s.address().getHostAddress()).toList());
         Lan.serve(o.port, view::serveTest);
         return 0;
@@ -186,13 +186,13 @@ public final class PingPlanet {
             for (Server s : servers) out.println(s.toCsv());
             return 0;
         }
-        View.create(out, Term.detect(out, o.noColor)).list(servers);
+        view(out, Term.detect(out, o.noColor)).list(servers);
         return 0;
     }
 
     private static int interfaces(Options o, PrintStream out) {
         List<Net.Route> routes = Net.defaultRoutes();
-        View.create(out, Term.detect(out, o.noColor)).interfaces(Net.sources(), routes.isEmpty() ? null : routes.getFirst().iface());
+        view(out, Term.detect(out, o.noColor)).interfaces(Net.sources(), routes.isEmpty() ? null : routes.getFirst().iface());
         return 0;
     }
 
@@ -209,8 +209,11 @@ public final class PingPlanet {
     }
 
     static String version() {
-        String v = PingPlanet.class.getPackage().getImplementationVersion();
-        return v != null ? v : "dev";
+        return Platform.version();
+    }
+
+    static View view(PrintStream out, Term term) {
+        return term.fancy ? new FancyView(out, term) : new PlainView(out);
     }
 
     private static int parsePort(String text) {

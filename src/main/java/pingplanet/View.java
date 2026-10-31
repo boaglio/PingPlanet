@@ -8,10 +8,6 @@ import java.util.List;
  */
 interface View {
 
-    static View create(java.io.PrintStream out, Term term) {
-        return term.fancy ? new FancyView(out, term) : new PlainView(out);
-    }
-
     // ---- overall progress ----------------------------------------------------
 
     /** Before a world test: what the whole run will do, for an overall progress bar. */

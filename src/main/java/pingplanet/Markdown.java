@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -25,7 +26,7 @@ final class Markdown {
         StringBuilder md = new StringBuilder("# PingPlanet report\n\n");
         String test = plan.servers().size() + " servers, " + (plan.downloads()
                 ? plan.seconds() + " s download each over " + plan.streams() + " streams" : "latency only");
-        md.append("**Date:** ").append(WHEN.format(when)).append(" · **PingPlanet** ").append(PingPlanet.version())
+        md.append("**Date:** ").append(WHEN.format(when)).append(" · **PingPlanet** ").append(Platform.version())
                 .append(" · **Test:** ").append(test).append("\n\n");
 
         List<Report.ServerResult> all = runs.stream().flatMap(r -> r.results().stream()).toList();
@@ -97,7 +98,7 @@ final class Markdown {
                 .sorted(Comparator.comparingDouble((Report.ServerResult r) -> r.download().mbps()).reversed())
                 .toList();
         if (ranked.size() < 2) return;
-        double max = ranked.getFirst().download().mbps();
+        double max = ranked.get(0).download().mbps();
         int labelWidth = Math.min(28, ranked.stream().mapToInt(r -> r.server().label().length()).max().orElse(10));
         md.append("<details><summary>Download ranking").append(run.source() == null ? "" : " via " + run.source().name())
                 .append("</summary>\n\n```\n");
@@ -114,7 +115,7 @@ final class Markdown {
 
     static String lan(Engine.LanPlan plan, List<Report.LanRun> runs, List<RecordingView.Warning> warnings, LocalDateTime when) {
         StringBuilder md = new StringBuilder("# PingPlanet LAN report\n\n");
-        md.append("**Date:** ").append(WHEN.format(when)).append(" · **PingPlanet** ").append(PingPlanet.version())
+        md.append("**Date:** ").append(WHEN.format(when)).append(" · **PingPlanet** ").append(Platform.version())
                 .append(" · **Host:** ").append(cell(plan.host())).append(':').append(plan.port())
                 .append(" · **Test:** ").append(plan.seconds()).append(" s each way over ").append(plan.streams()).append(" streams\n\n");
         md.append("| Connection | Address | Latency | Jitter | Loss | Download | Upload |\n|---|---|--:|--:|--:|--:|--:|\n");
@@ -156,7 +157,7 @@ final class Markdown {
      * in {@code spec} when it is a folder, or in the current folder when it is empty.
      */
     static Path target(String spec, LocalDateTime when) {
-        Path folder = spec == null || spec.isBlank() ? Path.of("") : Path.of(spec);
+        Path folder = spec == null || spec.isBlank() ? Paths.get("") : Paths.get(spec);
         if (!folder.toString().isEmpty() && !Files.isDirectory(folder)) return folder; // a file name: used as given
         // A generated name never replaces an earlier report, even one from the same second.
         String base = "pingplanet-" + STAMP.format(when);
@@ -168,7 +169,7 @@ final class Markdown {
     static Path write(Path file, String markdown) throws IOException {
         Path parent = file.toAbsolutePath().getParent();
         if (parent != null) Files.createDirectories(parent);
-        Files.writeString(file, markdown, StandardCharsets.UTF_8);
+        Files.write(file, markdown.getBytes(StandardCharsets.UTF_8));
         return file;
     }
 

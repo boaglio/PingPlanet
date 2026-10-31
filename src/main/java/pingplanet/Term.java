@@ -88,9 +88,9 @@ final class Term {
         try {
             Process p = new ProcessBuilder("stty", "size")
                     .redirectInput(ProcessBuilder.Redirect.from(new java.io.File("/dev/tty")))
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.to(new java.io.File("/dev/null")))
                     .start();
-            String[] size = new String(p.getInputStream().readAllBytes()).strip().split("\\s+");
+            String[] size = Net.readAll(p).strip().split("\\s+");
             if (p.waitFor() == 0 && size.length == 2) return Integer.parseInt(size[1]);
         } catch (Exception ignored) {
             // no stty or no tty

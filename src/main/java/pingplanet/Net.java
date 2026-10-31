@@ -1,5 +1,6 @@
 package pingplanet;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.Inet4Address;
@@ -8,8 +9,9 @@ import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HexFormat;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -26,7 +28,7 @@ final class Net {
         }
     }
 
-    private static final Path PROC_ROUTE = Path.of("/proc/net/route");
+    private static final Path PROC_ROUTE = Paths.get("/proc/net/route");
 
     private Net() {
     }
@@ -35,9 +37,9 @@ final class Net {
     static List<Source> sources() {
         List<Source> sources = new ArrayList<>();
         try {
-            for (NetworkInterface nic : NetworkInterface.networkInterfaces().toList()) {
+            for (NetworkInterface nic : Collections.list(NetworkInterface.getNetworkInterfaces())) {
                 if (!usable(nic)) continue;
-                for (InetAddress a : nic.inetAddresses().toList()) {
+                for (InetAddress a : Collections.list(nic.getInetAddresses())) {
                     if (a instanceof Inet4Address && !a.isLoopbackAddress() && !a.isLinkLocalAddress()) {
                         sources.add(new Source(nic.getName(), nic.getDisplayName(), a));
                     }
@@ -68,7 +70,7 @@ final class Net {
         Optional<Source> preferred = defaultSource(INTERNET);
         if (preferred.isPresent()) {
             List<Source> ordered = new ArrayList<>(picked);
-            if (ordered.removeIf(s -> s.name().equals(preferred.get().name()))) ordered.addFirst(preferred.get());
+            if (ordered.removeIf(s -> s.name().equals(preferred.get().name()))) ordered.add(0, preferred.get());
             return ordered;
         }
         return picked;
@@ -139,7 +141,7 @@ final class Net {
             return Optional.empty();
         }
         List<Route> defaults = defaultRoutes();
-        if (defaults.isEmpty() || defaults.getFirst().iface().equals(source.name())) return Optional.empty();
+        if (defaults.isEmpty() || defaults.get(0).iface().equals(source.name())) return Optional.empty();
         String ip = source.address().getHostAddress();
         if (hasSourceRule(ip)) return Optional.empty();
         String gateway = defaults.stream()
@@ -169,18 +171,26 @@ final class Net {
         for (String line : lines.subList(Math.min(1, lines.size()), lines.size())) { // skip the header
             String[] f = line.trim().split("\\s+");
             if (f.length < 8 || !f[1].equals("00000000") || !f[7].equals("00000000")) continue;
-            byte[] gw = HexFormat.of().parseHex(f[2]); // little-endian
-            String gateway = (gw[3] & 0xff) + "." + (gw[2] & 0xff) + "." + (gw[1] & 0xff) + "." + (gw[0] & 0xff);
+            int gw = Integer.parseUnsignedInt(f[2], 16); // little-endian
+            String gateway = (gw & 0xff) + "." + (gw >>> 8 & 0xff) + "." + (gw >>> 16 & 0xff) + "." + (gw >>> 24);
             routes.add(new Route(f[0], gateway, Integer.parseInt(f[6])));
         }
         routes.sort((a, b) -> Integer.compare(a.metric(), b.metric()));
         return routes;
     }
 
+    /** Everything a process printed. */
+    static String readAll(Process p) throws IOException {
+        ByteArrayOutputStream text = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        for (int n; (n = p.getInputStream().read(buffer)) != -1; ) text.write(buffer, 0, n);
+        return new String(text.toByteArray(), StandardCharsets.UTF_8);
+    }
+
     private static boolean hasSourceRule(String ip) {
         try {
             Process p = new ProcessBuilder("ip", "rule", "show").redirectErrorStream(true).start();
-            String rules = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String rules = readAll(p);
             if (!p.waitFor(2, TimeUnit.SECONDS)) p.destroy();
             String lower = rules.toLowerCase(Locale.ROOT);
             return lower.contains("from " + ip + " ") || lower.contains("from " + ip + "/32 ");

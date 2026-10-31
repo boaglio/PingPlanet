@@ -104,7 +104,7 @@ class ViewTest {
     @Test
     void plainViewHasNoColorsOrBoxes() {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        View view = View.create(new PrintStream(bytes, true, StandardCharsets.UTF_8), Term.plain());
+        View view = PingPlanet.view(new PrintStream(bytes, true, StandardCharsets.UTF_8), Term.plain());
         assertTrue(view instanceof PlainView);
         view.worldStart(3, true, 5, 4, null);
         view.latencyDone(3, 1);

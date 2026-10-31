@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 /**
@@ -64,7 +63,7 @@ final class Engine {
 
         // Latency first, to every server at once: it is light and does not skew other probes much.
         List<Latency> latencies = new ArrayList<>();
-        ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
+        ExecutorService pool = Platform.probes();
         try {
             List<Future<Latency>> futures = servers.stream()
                     .map(s -> pool.submit(() -> InternetTest.latency(s, LATENCY_SAMPLES, from)))
@@ -158,8 +157,8 @@ final class Engine {
         try {
             latency = Lan.latency(host, port, LAN_LATENCY_SAMPLES, view.lanLatencyProgress(LAN_LATENCY_SAMPLES), from);
         } catch (java.net.ConnectException | java.net.SocketTimeoutException e) {
-            throw new IOException("cannot connect to %s:%d (%s). Is \"pingplanet serve\" running there, and is the port open in its firewall?"
-                    .formatted(host, port, message(e)), e);
+            throw new IOException(String.format("cannot connect to %s:%d (%s). Is \"pingplanet serve\" running there, and is the port open in its firewall?",
+                    host, port, message(e)), e);
         }
         view.lanLatency(latency);
         checkCancelled();
@@ -182,7 +181,7 @@ final class Engine {
         Optional<String> name = Net.defaultSource(target).map(Net.Source::name);
         if (name.isPresent()) return name;
         List<Net.Route> routes = Net.defaultRoutes();
-        return routes.isEmpty() ? Optional.empty() : Optional.of(routes.getFirst().iface());
+        return routes.isEmpty() ? Optional.empty() : Optional.of(routes.get(0).iface());
     }
 
     /**
@@ -230,9 +229,7 @@ final class Engine {
     static String message(Exception e) {
         String m = e.getMessage();
         if (e instanceof java.net.UnknownHostException) return "unknown host " + m;
-        if (e instanceof java.net.http.HttpConnectTimeoutException || e instanceof java.net.SocketTimeoutException) {
-            return "timed out";
-        }
+        if (Platform.timedOut(e)) return "timed out";
         if (e instanceof java.net.ConnectException && (m == null || m.isBlank())) return "connection refused";
         return m != null && !m.isBlank() ? m : e.getClass().getSimpleName();
     }

@@ -134,7 +134,7 @@ record Advice(Net.Source current, Net.Source better, String reason) {
         String path = System.getenv("PATH");
         if (path == null) return false;
         for (String dir : path.split(java.io.File.pathSeparator)) {
-            if (java.nio.file.Files.isExecutable(java.nio.file.Path.of(dir, command))) return true;
+            if (java.nio.file.Files.isExecutable(java.nio.file.Paths.get(dir, command))) return true;
         }
         return false;
     }
