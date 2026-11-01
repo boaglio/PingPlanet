@@ -93,7 +93,8 @@ Test files are hosted by [Vultr](https://www.vultr.com), [Hetzner](https://www.h
 
 To publish a release, set the version in `pom.xml` and push a tag like `v0.1.0`: GitHub Actions builds
 the packages (`tools/package.sh`, `android/`) and attaches them to the release. Keep one signing key for the
-Android app, or phones will refuse updates: see the `android` job in `.github/workflows/build.yml`.
+Android app, or phones will refuse updates: see the `android` job in `.github/workflows/build.yml`. For Google Play,
+`tools/android-release.sh` builds the signed bundle, using the settings in `android/release.env`.
 
 ## License
 

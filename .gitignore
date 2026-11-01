@@ -31,4 +31,7 @@ target/
 # Android
 .gradle/
 android/build/
+android/release.env
 local.properties
+*.keystore
+*.jks
